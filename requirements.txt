@@ -1,0 +1,39 @@
+# ============================================================
+#  Zero Barreiras - Dependências Completas
+#  Instalar: pip install -r requirements.txt
+# ============================================================
+
+# --- Visão Computacional & MediaPipe ---
+opencv-contrib-python>=4.8
+mediapipe>=0.10
+protobuf>=3.20,<5
+
+# --- Machine Learning ---
+scikit-learn>=1.3
+scipy>=1.11
+numpy>=1.24
+pandas>=2.0
+joblib>=1.3
+
+# --- API (FastAPI) ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+websockets>=12.0
+python-multipart>=0.0.9
+
+# --- Reconhecimento de Voz (Médico -> Texto) ---
+SpeechRecognition>=3.10
+PyAudio>=0.2.14
+sounddevice>=0.4
+
+# --- Processamento de Imagem ---
+Pillow>=10.0
+
+# --- Visualização (gráficos de treino, etc.) ---
+matplotlib>=3.7
+
+# --- Rede / HTTP ---
+requests>=2.31
+
+# --- Utilidades ---
+rich>=13.0
