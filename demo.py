@@ -117,7 +117,7 @@ ultimo_frame_video = 0
 
 historico_gestos = deque(maxlen=JANELA_SUAVIZACAO)
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 if not cap.isOpened():
     print("ERRO: Nao foi possivel abrir a camera.")
     exit(1)

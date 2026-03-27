@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --color-laranja: #f59e0b;
+  --color-hospital-blue: #0ea5e9;
+  --color-glass: rgba(255, 255, 255, 0.75);
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #f0fdfa; /* Soft teal light background */
+  color: #0f172a;
+}
