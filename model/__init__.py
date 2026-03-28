@@ -1,1 +1,1 @@
-from model.keypoint_classifier.keypoint_classifier import KeyPointClassifier
+from model.sequence_classifier.sequence_classifier import SequenceClassifier, GestureLSTM

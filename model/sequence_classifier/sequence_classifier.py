@@ -64,6 +64,7 @@ class SequenceClassifier:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = None
         self.labels = []
+        self.class_id_to_label = {}  # Maps model output ID → gesture name
 
         if labels_path and os.path.exists(labels_path):
             with open(labels_path, encoding='utf-8-sig') as f:
@@ -74,6 +75,19 @@ class SequenceClassifier:
             num_classes = checkpoint.get('num_classes', len(self.labels))
             input_size = checkpoint.get('input_size', 1662)
 
+            # Load class mapping (new format with remapped IDs)
+            if 'class_id_to_label' in checkpoint:
+                # Convert string keys back to int
+                self.class_id_to_label = {
+                    int(k): v for k, v in checkpoint['class_id_to_label'].items()
+                }
+            else:
+                # Legacy format: assume 1:1 mapping
+                self.class_id_to_label = {
+                    i: self.labels[i] if i < len(self.labels) else f"Classe {i}"
+                    for i in range(num_classes)
+                }
+
             self.model = GestureLSTM(
                 input_size=input_size,
                 num_classes=num_classes,
@@ -82,6 +96,7 @@ class SequenceClassifier:
             self.model.eval()
             print(f"[SEQ] Loaded model from {model_path} on {self.device}")
             print(f"[SEQ] Classes: {num_classes}, Input: {input_size}")
+            print(f"[SEQ] Labels: {self.class_id_to_label}")
 
     @property
     def is_loaded(self):
@@ -100,10 +115,7 @@ class SequenceClassifier:
         if not self.is_loaded:
             return -1, 0.0
 
-        # Convert to tensor
         x = torch.FloatTensor(sequence).unsqueeze(0).to(self.device)
-
-        # Forward pass
         logits = self.model(x)
         probs = torch.softmax(logits, dim=1)
         confidence, idx = torch.max(probs, dim=1)
@@ -111,6 +123,8 @@ class SequenceClassifier:
         return int(idx.item()), float(confidence.item())
 
     def get_label(self, class_id):
+        if class_id in self.class_id_to_label:
+            return self.class_id_to_label[class_id]
         if 0 <= class_id < len(self.labels):
             return self.labels[class_id]
         return f"Classe {class_id}"

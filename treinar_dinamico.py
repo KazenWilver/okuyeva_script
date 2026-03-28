@@ -123,8 +123,16 @@ def main():
     X = np.array(all_sequences, dtype=np.float32)
     y = np.array(all_labels, dtype=np.int64)
 
-    unique_classes = np.unique(y)
+    unique_classes = sorted(np.unique(y))
     NUM_CLASSES = len(unique_classes)
+
+    # Remap class IDs to 0..N-1 (critical for softmax with few classes)
+    class_remap = {old_id: new_id for new_id, old_id in enumerate(unique_classes)}
+    class_id_to_label = {new_id: labels[old_id] if old_id < len(labels) else f"Classe {old_id}" 
+                         for old_id, new_id in class_remap.items()}
+    y = np.array([class_remap[c] for c in y], dtype=np.int64)
+    print(f"\nClass remap: {class_remap}")
+    print(f"Labels activas: {class_id_to_label}")
 
     print(f"\nDataset: {len(X)} sequências, {NUM_CLASSES} classes")
     print(f"Shape: {X.shape}")
@@ -170,7 +178,7 @@ def main():
         input_size=NUM_FEATURES,
         hidden_size=128,
         num_layers=3,
-        num_classes=len(labels),  # Use total label count for future expandability
+        num_classes=NUM_CLASSES,  # Only classes with actual training data
         dropout=0.3,
     ).to(device)
 
@@ -247,10 +255,12 @@ def main():
             # Save best model
             torch.save({
                 'model_state_dict': model.state_dict(),
-                'num_classes': len(labels),
+                'num_classes': NUM_CLASSES,
                 'input_size': NUM_FEATURES,
                 'sequence_length': SEQUENCE_LENGTH,
                 'labels': labels,
+                'class_id_to_label': class_id_to_label,
+                'class_remap': class_remap,
                 'best_accuracy': best_acc,
             }, MODEL_SAVE_PATH)
         else:
