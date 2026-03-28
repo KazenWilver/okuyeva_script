@@ -17,3 +17,8 @@ consultas/
 hand-gesture-recognition-mediapipe-main/
 node_modules/
 .cursor/
+ultralytics-main/
+ActionDetectionforSignLanguage-main/
+model/sequence_classifier/sequences/
+model/sequence_classifier/*.pt
+*.h5

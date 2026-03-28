@@ -8,6 +8,9 @@ export default function Consulta() {
   
   const [transcription, setTranscription] = useState("")
   const [isConnected, setIsConnected] = useState(false)
+  const [gestureType, setGestureType] = useState("none")
+  const [confidence, setConfidence] = useState(0)
+  const [lstmReady, setLstmReady] = useState(false)
   
   // High Performance Transmission Loop - Pulling texts only
   useEffect(() => {
@@ -17,6 +20,9 @@ export default function Consulta() {
         const data = await response.json()
         setTranscription(data.gesture || "")
         setIsConnected(data.camera_active)
+        setGestureType(data.gesture_type || "none")
+        setConfidence(Math.round((data.confidence || 0) * 100))
+        setLstmReady(data.lstm_available || false)
       } catch (err) {
         setIsConnected(false)
       }
@@ -82,11 +88,25 @@ export default function Consulta() {
               <div className="flex items-center gap-2 mb-4">
                 <Activity size={20} className="text-sky-500 animate-pulse" />
                 <h3 className="text-sm font-bold text-sky-500 uppercase tracking-widest">Transcrição Directa</h3>
+                {gestureType !== "none" && (
+                  <span className={`ml-auto text-xs font-bold px-2 py-1 rounded-full ${
+                    gestureType === "dynamic" 
+                      ? "bg-orange-100 text-orange-600" 
+                      : "bg-blue-100 text-blue-600"
+                  }`}>
+                    {gestureType === "dynamic" ? "🔄 Dinâmico" : "📌 Estático"}
+                  </span>
+                )}
               </div>
               
               <div className="text-2xl sm:text-3xl font-bold text-slate-800 break-words">
                 {transcription && transcription.trim() !== "" ? (
-                  <span className="text-emerald-600">{transcription.toUpperCase()}</span>
+                  <>
+                    <span className="text-emerald-600">{transcription.toUpperCase()}</span>
+                    <span className="block text-sm font-medium text-slate-400 mt-2">
+                      Confiança: {confidence}%
+                    </span>
+                  </>
                 ) : (
                   <span className="text-slate-400 font-medium text-xl">Comece a falar gestualmente...</span>
                 )}
@@ -95,11 +115,18 @@ export default function Consulta() {
             
             <div className="bg-slate-800 rounded-3xl p-6 border border-slate-700">
               <p className="text-sm text-slate-300 font-medium leading-relaxed">
-                🚀 <strong className="text-emerald-400">Modo C++ Hardware Acelerado:</strong> 
+                🚀 <strong className="text-emerald-400">Motor Neural v2:</strong> 
                 <br/><br/>
-                Para eliminar o lag do navegador, o túnel de conversão Base64 de JavaScript foi desativado. 
-                A câmara é agora acedida pelo OpenCV no sistema com processamento neural (Mediapipe e Scikit) em threads de C++.
+                MediaPipe Holistic (1662 pontos: corpo + face + mãos) 
+                {lstmReady 
+                  ? <> + <strong className="text-orange-400">LSTM GPU</strong> para reconhecimento dinâmico de sequências de movimento.</>
+                  : <> + <strong className="text-blue-400">MLP Estático</strong> (LSTM não treinado ainda).</>
+                }
               </p>
+              <div className="mt-3 flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${lstmReady ? 'bg-orange-400' : 'bg-blue-400'}`} />
+                <span className="text-xs text-slate-400">{lstmReady ? 'LSTM Dinâmico Ativo' : 'Modo Estático (Fallback)'}</span>
+              </div>
             </div>
           </div>
 
