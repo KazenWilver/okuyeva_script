@@ -4,11 +4,11 @@ Zero Barreiras — Recolha de Dados Dinâmica (Sequências de Movimento)
 Usa MediaPipe Holistic para capturar 1662 features por frame.
 Dois modos de recolha:
   [E] Modo ESTÁTICO: Grava frame-a-frame (como coleta.py original)
-  [D] Modo DINÂMICO: Grava blocos de 30 frames (sequências de movimento)
+  [D] Modo DINÂMICO: SPACE começa → faz gesto → SPACE pára → normaliza para 30 frames
 
 Teclas:
   [0-9, A-E] Seleccionar classe
-  [SPACE]    Iniciar/parar gravação (estático) ou gravar 1 sequência (dinâmico)
+  [SPACE]    Iniciar/parar gravação (ambos os modos)
   [E]        Modo Estático
   [D]        Modo Dinâmico  
   [T]        Dashboard de classes
@@ -22,6 +22,12 @@ import glob
 import cv2 as cv
 import numpy as np
 
+try:
+    import winsound
+    HAS_SOUND = True
+except ImportError:
+    HAS_SOUND = False
+
 from features_v2 import (
     create_holistic_detector, process_frame, extract_keypoints,
     has_hands, draw_landmarks, NUM_FEATURES_V2,
@@ -32,7 +38,8 @@ SEQUENCE_DIR = 'model/sequence_classifier/sequences'
 STATIC_CSV = 'model/sequence_classifier/static_keypoints.csv'
 LABEL_CSV = 'model/sequence_classifier/sequence_classifier_label.csv'
 
-SEQUENCE_LENGTH = 30   # frames per dynamic sequence
+SEQUENCE_LENGTH = 30   # normalized output length
+MIN_FRAMES = 10        # minimum frames to accept a sequence
 
 os.makedirs(SEQUENCE_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(STATIC_CSV), exist_ok=True)
@@ -198,7 +205,13 @@ def main():
     selected_class = -1
     recording_static = False
     recording_dynamic = False
+    countdown_active = False
+    countdown_start = 0
+    COUNTDOWN_SECS = 3  # 3-2-1 countdown
     dynamic_buffer = []
+    rec_start_time = time.time()
+    frames_no_hands = 0
+    MAX_NO_HANDS = 15  # auto-stop after 15 frames without hands (~0.5s)
     show_dashboard = True
     session_start = time.time()
     samples_this_session = 0
@@ -268,25 +281,67 @@ def main():
 
         # ── Recording logic ──
         if mode == 'dynamic':
-            # SPACE starts recording a 30-frame sequence
-            if key == 32 and selected_class >= 0 and not recording_dynamic:
-                recording_dynamic = True
-                dynamic_buffer = []
-                print(f"[REC] A gravar sequência dinâmica... ({SEQUENCE_LENGTH} frames)")
+            # SPACE triggers countdown or stops recording
+            if key == 32 and selected_class >= 0:
+                if not recording_dynamic and not countdown_active:
+                    # START COUNTDOWN
+                    countdown_active = True
+                    countdown_start = time.time()
+                    print(f"[PREP] Prepare-se... 3...")
+                elif recording_dynamic:
+                    # STOP recording and save
+                    if len(dynamic_buffer) >= MIN_FRAMES:
+                        cls_name = labels[selected_class]
+                        elapsed = time.time() - rec_start_time
+                        filepath = save_sequence(cls_name, dynamic_buffer)
+                        dyn_counts[selected_class] = dyn_counts.get(selected_class, 0) + 1
+                        samples_this_session += 1
+                        if HAS_SOUND:
+                            winsound.Beep(800, 200)  # stop beep
+                        print(f"[OK] Sequencia guardada: {filepath} ({len(dynamic_buffer)} frames, {elapsed:.1f}s -> normalizado para {SEQUENCE_LENGTH}) (Total: {dyn_counts[selected_class]})")
+                    else:
+                        print(f"[SKIP] Muito curto ({len(dynamic_buffer)} frames). Minimo: {MIN_FRAMES}")
+                    recording_dynamic = False
+                    countdown_active = False
+                    dynamic_buffer = []
+                    frames_no_hands = 0
 
+            # Countdown logic
+            if countdown_active and not recording_dynamic:
+                elapsed_cd = time.time() - countdown_start
+                if elapsed_cd >= COUNTDOWN_SECS:
+                    # Countdown finished -> START RECORDING
+                    countdown_active = False
+                    recording_dynamic = True
+                    dynamic_buffer = []
+                    rec_start_time = time.time()
+                    frames_no_hands = 0
+                    if HAS_SOUND:
+                        winsound.Beep(1200, 300)  # start beep
+                    print(f"[REC] GRAVANDO! Faca o gesto e prima [SPACE] para parar.")
+
+            # Record frames
             if recording_dynamic:
                 keypoints = extract_keypoints(results)
                 dynamic_buffer.append(keypoints)
 
-                # Check if we have enough frames
-                if len(dynamic_buffer) >= SEQUENCE_LENGTH:
-                    cls_name = labels[selected_class]
-                    filepath = save_sequence(cls_name, dynamic_buffer)
-                    dyn_counts[selected_class] = dyn_counts.get(selected_class, 0) + 1
-                    samples_this_session += 1
-                    recording_dynamic = False
-                    dynamic_buffer = []
-                    print(f"[OK] Sequência guardada: {filepath} (Total: {dyn_counts[selected_class]})")
+                # Auto-stop if hands disappear for too long
+                if not hands_visible:
+                    frames_no_hands += 1
+                    if frames_no_hands >= MAX_NO_HANDS and len(dynamic_buffer) >= MIN_FRAMES:
+                        cls_name = labels[selected_class]
+                        elapsed = time.time() - rec_start_time
+                        filepath = save_sequence(cls_name, dynamic_buffer)
+                        dyn_counts[selected_class] = dyn_counts.get(selected_class, 0) + 1
+                        samples_this_session += 1
+                        if HAS_SOUND:
+                            winsound.Beep(600, 200)
+                        print(f"[AUTO] Maos perdidas - sequencia guardada: {filepath} ({len(dynamic_buffer)} frames, {elapsed:.1f}s)")
+                        recording_dynamic = False
+                        dynamic_buffer = []
+                        frames_no_hands = 0
+                else:
+                    frames_no_hands = 0
 
         elif mode == 'static':
             # SPACE toggles continuous recording
@@ -321,22 +376,56 @@ def main():
             cls_name = labels[selected_class]
 
             if mode == 'dynamic' and recording_dynamic:
-                progress = len(dynamic_buffer) / SEQUENCE_LENGTH
-                bar_w = w - 40
-                bar_fill = int(bar_w * progress)
+                elapsed_rec = time.time() - rec_start_time
+                n_frames = len(dynamic_buffer)
 
-                cv.rectangle(image, (0, 42), (w, 85), (0, 100, 0), cv.FILLED)
-                cv.putText(image, f"GRAVANDO [{selected_class}] {cls_name}: {len(dynamic_buffer)}/{SEQUENCE_LENGTH}",
-                           (10, 62), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                # Pulsing red recording indicator
+                pulse = int(127 + 128 * np.sin(time.time() * 5))
+                cv.rectangle(image, (0, 42), (w, 85), (0, 0, pulse // 2), cv.FILLED)
+                cv.circle(image, (25, 58), 8, (0, 0, 255), cv.FILLED)
+                cv.putText(image, f"REC [{selected_class}] {cls_name}: {n_frames} frames | {elapsed_rec:.1f}s | [SPACE] Parar",
+                           (42, 62), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
-                # Progress bar
-                cv.rectangle(image, (20, 68), (20 + bar_w, 80), (80, 80, 80), cv.FILLED)
-                cv.rectangle(image, (20, 68), (20 + bar_fill, 80), (0, 255, 0), cv.FILLED)
+                # Min frames indicator
+                if n_frames < MIN_FRAMES:
+                    cv.putText(image, f"Min: {MIN_FRAMES - n_frames} frames restantes",
+                               (20, 78), cv.FONT_HERSHEY_SIMPLEX, 0.35, (100, 100, 255), 1)
+                else:
+                    cv.putText(image, f"OK para parar!",
+                               (20, 78), cv.FONT_HERSHEY_SIMPLEX, 0.35, (100, 255, 100), 1)
 
-            elif mode == 'dynamic' and not recording_dynamic:
+            elif mode == 'dynamic' and countdown_active:
+                # COUNTDOWN UI
+                elapsed_cd = time.time() - countdown_start
+                remaining = max(0, COUNTDOWN_SECS - elapsed_cd)
+                count_num = int(remaining) + 1
+                if count_num > COUNTDOWN_SECS:
+                    count_num = COUNTDOWN_SECS
+
+                # Pulsing yellow background
+                pulse = int(180 + 75 * np.sin(time.time() * 8))
+                cv.rectangle(image, (0, 42), (w, 85), (0, pulse // 3, pulse // 2), cv.FILLED)
+                cv.putText(image, f"PREPARE-SE: {count_num}...",
+                           (10, 68), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+                # Large centered countdown number
+                text = str(count_num)
+                font_scale = 5.0
+                thickness = 8
+                (tw, th), _ = cv.getTextSize(text, cv.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                cx = (w - tw) // 2
+                cy = (h + th) // 2
+                # Shadow
+                cv.putText(image, text, (cx + 3, cy + 3),
+                           cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness + 2)
+                # Number
+                cv.putText(image, text, (cx, cy),
+                           cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), thickness)
+
+            elif mode == 'dynamic' and not recording_dynamic and not countdown_active:
                 n = dyn_counts.get(selected_class, 0)
                 cv.rectangle(image, (0, 42), (w, 78), (60, 60, 60), cv.FILLED)
-                cv.putText(image, f"[{selected_class}] {cls_name}: {n} seq. | [SPACE] Gravar sequencia",
+                cv.putText(image, f"[{selected_class}] {cls_name}: {n} seq. | [SPACE] Iniciar gesto",
                            (10, 65), cv.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 2)
 
             elif mode == 'static' and recording_static:
