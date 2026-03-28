@@ -138,11 +138,11 @@ def main():
     print(f"Shape: {X.shape}")
 
     print("\nDistribuição:")
-    for cls_id in sorted(unique_classes):
-        count = np.sum(y == cls_id)
-        label = labels[cls_id] if cls_id < len(labels) else f"Classe {cls_id}"
+    for new_id in sorted(class_id_to_label.keys()):
+        count = int(np.sum(y == new_id))
+        label = class_id_to_label[new_id]
         bar = "#" * (count // 2)
-        print(f"  {cls_id:2d}: {label:20s} {count:5d}  {bar}")
+        print(f"  {new_id:2d}: {label:20s} {count:5d}  {bar}")
 
     if NUM_CLASSES < 2:
         print("\nERRO: Precisa de pelo menos 2 classes com dados.")
@@ -299,7 +299,7 @@ def main():
         correct = class_correct.get(cls_id, 0)
         total = class_total[cls_id]
         acc = correct / total if total > 0 else 0
-        label = labels[cls_id] if cls_id < len(labels) else f"Classe {cls_id}"
+        label = class_id_to_label.get(cls_id, f"Classe {cls_id}")
         print(f"  {cls_id:2d}: {label:20s} {acc*100:6.1f}%  ({correct}/{total})")
 
     size_kb = os.path.getsize(MODEL_SAVE_PATH) / 1024
