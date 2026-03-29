@@ -1,5 +1,5 @@
 """
-Zero Barreiras — Recolha de Dados Dinâmica (Sequências de Movimento)
+Okuyeva — Recolha de Dados Dinâmica (Sequências de Movimento)
 
 Usa MediaPipe Holistic para capturar 1662 features por frame.
 Dois modos de recolha:
@@ -217,7 +217,7 @@ def main():
     samples_this_session = 0
 
     print("=" * 62)
-    print("  COLETA DE DADOS v2 — Zero Barreiras")
+    print("  COLETA DE DADOS v2 — Okuyeva")
     print("  MediaPipe Holistic (1662 features)")
     print("  Modos: [D] Dinâmico  [E] Estático")
     print("=" * 62)
@@ -368,7 +368,7 @@ def main():
         mode_color = (0, 180, 255) if mode == 'dynamic' else (255, 180, 0)
         mode_text = "DINAMICO" if mode == 'dynamic' else "ESTATICO"
         cv.rectangle(image, (0, 0), (w, 40), (40, 40, 40), cv.FILLED)
-        cv.putText(image, f"Coleta v2 — Zero Barreiras | Modo: {mode_text}",
+        cv.putText(image, f"Coleta v2 — Okuyeva | Modo: {mode_text}",
                    (10, 28), cv.FONT_HERSHEY_SIMPLEX, 0.55, mode_color, 2)
 
         # Recording status bar
@@ -469,12 +469,12 @@ def main():
         cv.putText(image, "[SPACE]Gravar  [D]Dinamico  [E]Estatico  [T]Dashboard  [0-9,A-E]Classe  [Q]Sair",
                    (10, h - 8), cv.FONT_HERSHEY_SIMPLEX, 0.32, (180, 180, 180), 1)
 
-        cv.imshow("Coleta Dinamica — Zero Barreiras", image)
+        cv.imshow("Coleta Dinamica — Okuyeva", image)
 
         if key == 27 or key == ord('q') or key == ord('Q'):
             break
         try:
-            if cv.getWindowProperty("Coleta Dinamica — Zero Barreiras", cv.WND_PROP_VISIBLE) < 1:
+            if cv.getWindowProperty("Coleta Dinamica — Okuyeva", cv.WND_PROP_VISIBLE) < 1:
                 break
         except cv.error:
             break

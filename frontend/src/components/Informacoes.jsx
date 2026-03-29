@@ -2,56 +2,89 @@ import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, BookOpen, Shield, HelpCircle } from 'lucide-react'
 
+const cards = [
+  {
+    icon: BookOpen,
+    color: "#34d399",
+    bg: "rgba(52,211,153,0.1)",
+    label: "Funcionamento",
+    title: "Como funciona?",
+    body: "Os seus padrões corporais são lidos e processados em milissegundos, gerando texto compreensível de forma fluída durante toda a consulta.",
+  },
+  {
+    icon: Shield,
+    color: "#60a5fa",
+    bg: "rgba(96,165,250,0.1)",
+    label: "Privacidade",
+    title: "Dados Seguros",
+    body: "Não gravamos imagens na rede. O nosso motor baseia-se num sistema de metadados corporais instantâneos. Tudo é processado localmente.",
+  },
+  {
+    icon: HelpCircle,
+    color: "#2dd4bf",
+    bg: "rgba(45,212,191,0.1)",
+    label: "Suporte",
+    title: "Ajuda Técnica",
+    body: "Para questões em relação a hardware, ou falta de câmara, fale com a recepção principal.",
+  },
+]
+
 export default function Informacoes() {
   const navigate = useNavigate()
 
   return (
     <motion.div 
-      className="w-full h-full flex flex-col bg-white overflow-y-auto"
-      initial={{ opacity: 0, y: '50%' }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: '50%' }}
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      className="w-full h-full flex flex-col px-4 sm:px-6 py-4 sm:py-6 overflow-y-auto"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
     >
-      <div className="h-40 lg:h-64 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-b-[3rem] lg:rounded-b-[5rem] p-8 lg:p-16 text-white relative flex items-end shadow-2xl">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-6 sm:mb-8 flex-shrink-0">
         <button 
           onClick={() => navigate('/menu')}
-          className="absolute top-8 left-8 lg:top-12 lg:left-12 p-3 lg:p-4 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md transition-colors"
+          className="strata-card w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center cursor-pointer !rounded-full"
         >
-          <ArrowLeft size={32} />
+          <ArrowLeft size={15} />
         </button>
-        <h1 className="text-4xl lg:text-6xl font-extrabold ml-4">Alguma Dúvida?</h1>
+        <span className="mono-tag">Informações</span>
       </div>
 
-      <div className="p-10 lg:p-24 flex flex-col gap-10 lg:gap-14 max-w-6xl mx-auto w-full">
-        <p className="text-slate-600 leading-relaxed font-medium text-xl lg:text-3xl">
-          O Zero Barreiras é uma solução construída para aproximar pacientes mudos e médicos através de tradução instantânea com recurso à IA local.
+      <div className="max-w-2xl mx-auto w-full">
+        <h1 className="display-text mb-4">Alguma<br/>Dúvida?</h1>
+
+        <p className="text-sm sm:text-base max-w-md mb-8 leading-relaxed" style={{ color: 'var(--text-mono)' }}>
+          O Okuyeva aproxima pacientes surdos e médicos através de tradução instantânea com recurso à IA local.
         </p>
 
-        <div className="flex gap-6 p-8 lg:p-10 rounded-3xl bg-indigo-50 border border-indigo-100 shadow-sm">
-          <BookOpen className="text-indigo-500 shrink-0 w-12 h-12 lg:w-16 lg:h-16" />
-          <div className="flex-1">
-            <h3 className="font-bold text-indigo-900 text-2xl lg:text-3xl">Como funciona?</h3>
-            <p className="text-indigo-700 text-lg lg:text-xl mt-3 leading-relaxed">Os seus padrões corporais são lidos e processados em milissegundos, gerando texto compreensível de forma fluída durante toda a consulta.</p>
-          </div>
+        <div className="flex flex-col gap-4">
+          {cards.map((card, i) => (
+            <motion.div
+              key={i}
+              className="strata-card p-6 sm:p-8"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 + i * 0.1 }}
+            >
+              <div className="flex gap-4 items-start">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: card.bg }}>
+                  <card.icon size={18} strokeWidth={1.4} style={{ color: card.color }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="mono-label block mb-1">{card.label}</span>
+                  <h3 className="text-base sm:text-lg font-extrabold tracking-tight mb-2">{card.title}</h3>
+                  <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-mono)' }}>{card.body}</p>
+                </div>
+              </div>
+            </motion.div>
+          ))}
         </div>
 
-        <div className="flex gap-6 p-8 lg:p-10 rounded-3xl bg-emerald-50 border border-emerald-100 shadow-sm">
-          <Shield className="text-emerald-500 shrink-0 w-12 h-12 lg:w-16 lg:h-16" />
-          <div className="flex-1">
-            <h3 className="font-bold text-emerald-900 text-2xl lg:text-3xl">Privacidade Garantida</h3>
-            <p className="text-emerald-700 text-lg lg:text-xl mt-3 leading-relaxed">Não gravamos imagens na rede. O nosso motor baseia-se num sistema de metadados corporais instantâneos.</p>
-          </div>
+        <div className="mt-8 flex items-center gap-3">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          <span className="mono-label">v2.0 · LSTM · Hackathon Okuyeva · Angola 2026</span>
         </div>
-
-        <div className="flex gap-6 p-8 lg:p-10 rounded-3xl bg-sky-50 border border-sky-100 mb-12 shadow-sm">
-          <HelpCircle className="text-sky-500 shrink-0 w-12 h-12 lg:w-16 lg:h-16" />
-          <div className="flex-1">
-            <h3 className="font-bold text-sky-900 text-2xl lg:text-3xl">Suporte Médico</h3>
-            <p className="text-sky-700 text-lg lg:text-xl mt-3 leading-relaxed">Para questões em relação a hardware, ou falta de câmara, puxe a cordinha de emergência e fale com recepção principal.</p>
-          </div>
-        </div>
-
       </div>
     </motion.div>
   )

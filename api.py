@@ -1,10 +1,12 @@
 """
-Zero Barreiras — API de Streaming MJPEG + Classificação Dinâmica (LSTM)
+Okuyeva — API de Streaming MJPEG + Classificação Dinâmica (LSTM)
 
 Arquitectura:
   - MediaPipe Holistic (1662 features/frame) para tracking completo
   - Buffer circular de 30 frames para classificação temporal
   - LSTM bidireccional (PyTorch GPU) para gestos dinâmicos
+  - Suavização temporal: voto maioritário sobre últimas N predições
+  - Gesto "hold": mantém o gesto visível por pelo menos 1.5s
   - MJPEG streaming directo para o browser
 """
 import os
@@ -12,7 +14,7 @@ import time
 import cv2 as cv
 import threading
 import numpy as np
-from collections import deque
+from collections import deque, Counter
 
 import mediapipe as mp
 try:
@@ -48,13 +50,6 @@ except Exception as e:
     LSTM_AVAILABLE = False
     print(f"[LSTM] Not available: {e}")
 
-# Sequence classifier labels
-seq_labels = []
-SEQ_LABEL_CSV = 'model/sequence_classifier/sequence_classifier_label.csv'
-if os.path.exists(SEQ_LABEL_CSV):
-    with open(SEQ_LABEL_CSV, encoding='utf-8-sig') as f:
-        seq_labels = [row.strip() for row in f if row.strip()]
-
 app = FastAPI()
 
 app.add_middleware(
@@ -64,14 +59,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-CONFIANCA_MINIMA = 0.40  # Lowered from 0.70 — model with few classes needs less
+CONFIANCA_MINIMA = 0.45
 SEQUENCE_LENGTH = 30
-CLASSIFY_EVERY_N = 10  # Run LSTM every N new frames (sliding window)
+CLASSIFY_EVERY_N = 10     # Run LSTM every N new frames
+SMOOTHING_WINDOW = 5      # Vote over last N predictions
+GESTURE_HOLD_TIME = 1.5   # Keep gesture visible for at least this many seconds
 
 # ── Shared State ──
 global_gesture = ""
 global_confidence = 0.0
-global_gesture_type = "none"  # "dynamic" or "none"
+global_gesture_type = "none"
 video_initialized = False
 
 
@@ -87,7 +84,7 @@ cam_state = CameraState()
 def capture_thread():
     global global_gesture, global_confidence, global_gesture_type, video_initialized
 
-    # Probe cameras, skip virtual ones
+    # Probe cameras
     cap = None
     for i in range(3):
         temp_cap = cv.VideoCapture(i, cv.CAP_DSHOW)
@@ -120,8 +117,15 @@ def capture_thread():
     frames_since_classify = 0
     last_debug_time = 0
 
+    # ── Smoothing state ──
+    prediction_history = deque(maxlen=SMOOTHING_WINDOW)
+    last_gesture_time = 0     # When the last gesture was first detected
+    active_gesture = ""       # Currently displayed gesture
+    active_confidence = 0.0
+
     video_initialized = True
     print("[API] Capture thread started")
+    print(f"[API] Smoothing: {SMOOTHING_WINDOW} votes | Hold: {GESTURE_HOLD_TIME}s | Min confidence: {CONFIANCA_MINIMA}")
 
     while True:
         ret, image = cap.read()
@@ -134,13 +138,15 @@ def capture_thread():
         results = process_frame(image, holistic)
         hands_visible = has_hands(results)
 
-        # Draw landmarks on image
+        # Draw landmarks
         draw_minimal_landmarks(image, results)
 
         # Extract holistic keypoints (1662 features)
         keypoints = extract_keypoints(results)
 
         # ── LSTM Dynamic Classification ──
+        now = time.time()
+
         if LSTM_AVAILABLE and hands_visible:
             sequence_buffer.append(keypoints)
             frames_since_classify += 1
@@ -151,24 +157,58 @@ def capture_thread():
                 class_id, confidence = seq_classifier(seq_array)
                 label = seq_classifier.get_label(class_id)
 
-                # Debug logging (every 2 seconds max)
-                now = time.time()
-                if now - last_debug_time > 2.0:
-                    print(f"[LSTM] Predicted: {label} ({confidence*100:.1f}%) | Threshold: {CONFIANCA_MINIMA*100:.0f}%")
-                    last_debug_time = now
-
+                # Add to prediction history (only meaningful predictions)
                 if confidence > CONFIANCA_MINIMA and label.lower() != "neutro":
-                    global_gesture = label
-                    global_confidence = confidence
-                    global_gesture_type = "dynamic"
+                    prediction_history.append((label, confidence))
                 else:
-                    global_gesture = ""
-                    global_confidence = 0.0
-                    global_gesture_type = "none"
+                    prediction_history.append(("", 0.0))
+
+                # ── Majority Vote Smoothing ──
+                if prediction_history:
+                    # Count non-empty predictions
+                    valid_preds = [(lbl, conf) for lbl, conf in prediction_history if lbl]
+                    
+                    if len(valid_preds) >= 2:  # Require at least 2 agreeing predictions
+                        label_counts = Counter(lbl for lbl, _ in valid_preds)
+                        best_label, count = label_counts.most_common(1)[0]
+                        
+                        # Require majority
+                        if count >= len(prediction_history) / 2:
+                            avg_conf = np.mean([conf for lbl, conf in valid_preds if lbl == best_label])
+                            active_gesture = best_label
+                            active_confidence = avg_conf
+                            last_gesture_time = now
+                        
+                    elif not valid_preds:
+                        # No valid predictions — but respect hold time
+                        if now - last_gesture_time > GESTURE_HOLD_TIME:
+                            active_gesture = ""
+                            active_confidence = 0.0
+
+                # Debug logging
+                if now - last_debug_time > 2.0:
+                    raw_label = label if confidence > CONFIANCA_MINIMA else "---"
+                    print(f"[LSTM] Raw: {raw_label} ({confidence*100:.1f}%) | "
+                          f"Smoothed: {active_gesture or '---'} ({active_confidence*100:.0f}%) | "
+                          f"History: {len(prediction_history)}")
+                    last_debug_time = now
 
         elif not hands_visible:
             sequence_buffer.clear()
             frames_since_classify = 0
+            prediction_history.clear()
+            
+            # Respect hold time before clearing
+            if now - last_gesture_time > GESTURE_HOLD_TIME:
+                active_gesture = ""
+                active_confidence = 0.0
+
+        # Update global state
+        if active_gesture:
+            global_gesture = active_gesture
+            global_confidence = active_confidence
+            global_gesture_type = "dynamic"
+        else:
             global_gesture = ""
             global_confidence = 0.0
             global_gesture_type = "none"

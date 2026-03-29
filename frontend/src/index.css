@@ -1,13 +1,127 @@
 @import "tailwindcss";
 
-@theme {
-  --color-laranja: #f59e0b;
-  --color-hospital-blue: #0ea5e9;
-  --color-glass: rgba(255, 255, 255, 0.75);
+:root {
+  --bg-base: #f2f2f2;
+  --card-bg: #ffffff;
+  --card-border: rgba(0, 0, 0, 0.06);
+  --card-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.06);
+  --card-hover-shadow: 0 12px 36px -6px rgba(0, 0, 0, 0.08);
+  --accent-green: #34d399;
+  --accent-blue: #60a5fa;
+  --accent-teal: #2dd4bf;
+  --text-solid: #0f172a;
+  --text-mid: #334155;
+  --text-mono: #64748b;
+  --ease-expo: cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   font-family: 'Inter', system-ui, sans-serif;
-  background-color: #f0fdfa; /* Soft teal light background */
-  color: #0f172a;
+  background-color: var(--bg-base);
+  color: var(--text-solid);
+  overflow: hidden;
+}
+
+/* ── Grain Overlay ── */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  opacity: 0.025;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Strata Card ── */
+.strata-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.4s var(--ease-expo);
+  position: relative;
+  overflow: hidden;
+}
+
+.strata-card:hover {
+  box-shadow: var(--card-hover-shadow);
+  transform: translateY(-2px);
+}
+
+/* ── Mono Label ── */
+.mono-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--text-mono);
+}
+
+.mono-tag {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-mono);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mono-tag::before {
+  content: '';
+  width: 24px;
+  height: 1.5px;
+  background: var(--accent-teal);
+  opacity: 0.6;
+}
+
+/* ── Display Heading ── */
+.display-text {
+  font-size: clamp(2.2rem, 7vw, 5rem);
+  font-weight: 800;
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  color: var(--text-solid);
+}
+
+/* ── Reveal Animation ── */
+@keyframes revealUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reveal-up {
+  animation: revealUp 0.7s var(--ease-expo) backwards;
+}
+
+/* ── Pulse Ring ── */
+@keyframes pulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.35); }
+  70% { box-shadow: 0 0 0 14px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+
+.pulse-ring {
+  animation: pulseRing 2.5s infinite;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.15); border-radius: 4px; }
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .display-text {
+    font-size: clamp(1.8rem, 8vw, 2.8rem);
+    line-height: 1;
+  }
+  .mono-tag { font-size: 0.6rem; letter-spacing: 0.12em; }
+  .mono-label { font-size: 0.6rem; }
 }

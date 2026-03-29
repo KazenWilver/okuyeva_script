@@ -1,5 +1,5 @@
 """
-Zero Barreiras — Feature Extraction v2 (MediaPipe Holistic)
+Okuyeva — Feature Extraction v2 (MediaPipe Holistic)
 
 Uses mp.solutions.holistic for simultaneous tracking of:
   - Pose:  33 landmarks × 4 (x,y,z,visibility)  = 132 features

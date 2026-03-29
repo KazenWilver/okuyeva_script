@@ -5,62 +5,77 @@ import { Stethoscope, Info } from 'lucide-react'
 export default function MenuPrincipal() {
   const navigate = useNavigate()
 
-  const cardVariants = {
-    hidden: { opacity: 0, y: 50 },
-    visible: { opacity: 1, y: 0 }
-  }
-
   return (
     <motion.div 
-      className="w-full h-full flex flex-col p-8 items-center justify-center bg-white"
-      initial="hidden"
-      animate="visible"
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ staggerChildren: 0.2 }}
+      className="w-full h-full flex flex-col items-center justify-center px-5 sm:px-8"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4 }}
     >
-      <motion.h1 
-        className="text-4xl lg:text-5xl font-extrabold text-slate-800 mb-16 text-center"
-        variants={cardVariants}
+      <motion.span 
+        className="mono-tag mb-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.1 }}
       >
-        O que deseja fazer hoje?
+        Menu Principal
+      </motion.span>
+
+      <motion.h1 
+        className="display-text text-center mb-10 sm:mb-14"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+      >
+        O que deseja<br/>fazer?
       </motion.h1>
 
-      <div className="flex flex-col sm:flex-row gap-8 lg:gap-16 w-full max-w-5xl justify-center items-center">
-        {/* Consulta Button */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 w-full max-w-lg">
         <motion.button
-          variants={cardVariants}
-          whileHover={{ scale: 1.05, translateY: -10 }}
-          whileTap={{ scale: 0.95 }}
           onClick={() => navigate('/consulta')}
-          className="w-full max-w-sm aspect-square bg-gradient-to-br from-teal-400 to-emerald-500 rounded-[3rem] p-8 flex flex-col items-center justify-center text-white shadow-2xl shadow-teal-500/40 group relative overflow-hidden"
+          className="strata-card p-7 sm:p-8 text-left cursor-pointer"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          whileTap={{ scale: 0.97 }}
         >
-          <div className="absolute inset-0 bg-white/20 group-hover:opacity-0 transition-opacity blur-2xl rounded-full scale-150 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
-          <motion.div 
-            className="bg-white/20 p-8 rounded-full mb-8 backdrop-blur-md"
-            animate={{ y: [0, -10, 0] }}
-            transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-          >
-            <Stethoscope size={80} strokeWidth={1.5} />
-          </motion.div>
-          <span className="text-3xl font-bold tracking-wide">Consulta</span>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center mb-5" style={{ background: 'rgba(52,211,153,0.1)' }}>
+            <Stethoscope size={20} strokeWidth={1.4} className="text-emerald-500" />
+          </div>
+          <div className="text-lg sm:text-xl font-extrabold tracking-tight">Consulta</div>
+          <p className="text-xs sm:text-sm mt-2 leading-relaxed" style={{ color: 'var(--text-mono)' }}>
+            Tradução gestual em tempo real
+          </p>
         </motion.button>
 
-        {/* Informacoes Button */}
         <motion.button
-          variants={cardVariants}
-          whileHover={{ scale: 1.05, translateY: -10 }}
-          whileTap={{ scale: 0.95 }}
           onClick={() => navigate('/informacoes')}
-          className="w-full max-w-sm aspect-square bg-gradient-to-br from-indigo-400 to-purple-600 rounded-[3rem] p-8 flex flex-col items-center justify-center text-white shadow-2xl shadow-purple-500/40 group relative overflow-hidden"
+          className="strata-card p-7 sm:p-8 text-left cursor-pointer"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          whileTap={{ scale: 0.97 }}
         >
-          <div className="absolute inset-0 bg-white/20 group-hover:opacity-0 transition-opacity blur-2xl rounded-full scale-150 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
-          <div className="bg-white/20 p-8 rounded-full mb-8 backdrop-blur-md">
-            <Info size={80} strokeWidth={1.5} />
+          <div className="w-10 h-10 rounded-full flex items-center justify-center mb-5" style={{ background: 'rgba(96,165,250,0.1)' }}>
+            <Info size={20} strokeWidth={1.4} className="text-blue-400" />
           </div>
-          <span className="text-3xl font-bold tracking-wide">Informações</span>
+          <div className="text-lg sm:text-xl font-extrabold tracking-tight">Informações</div>
+          <p className="text-xs sm:text-sm mt-2 leading-relaxed" style={{ color: 'var(--text-mono)' }}>
+            Como funciona o sistema
+          </p>
         </motion.button>
       </div>
 
+      <motion.div 
+        className="mt-10 sm:mt-14 flex items-center gap-3"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.6 }}
+      >
+        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-ring" />
+        <span className="mono-label"></span>
+      </motion.div>
     </motion.div>
   )
 }

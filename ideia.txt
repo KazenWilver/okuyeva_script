@@ -1,0 +1,152 @@
+Base de Dados e Guião para Demonstração - Hackathon Okuyeva
+
+Desafio 02: Atendimento Digno e Inclusivo em SSR e SHM
+
+1. Dicionário do Sistema: 30 Palavras-Chave
+
+Estas palavras foram selecionadas para cobrir saudações básicas, termos médicos, saúde sexual e reprodutiva, e sentimentos.
+
+Olá
+
+Consulta
+
+Médico (ou Doutor)
+
+Paciente
+
+Dor
+
+Saúde
+
+Menstruação
+
+Ciclo
+
+Cólica
+
+Sangramento
+
+Sangue
+
+Penso higiénico
+
+Útero
+
+Gravidez
+
+Preservativo
+
+Pílula
+
+Prevenção
+
+Exame
+
+Receita (Médica)
+
+Tratamento
+
+Infecção
+
+Dúvida
+
+Medo
+
+Confortável
+
+Privacidade
+
+Respeito
+
+Corpo
+
+Ajuda
+
+Obrigada
+
+Adeus
+
+2. Dataset do Sistema: 30 Frases de Contexto
+
+Estas frases representam as interações mais comuns e as barreiras de comunicação relatadas em consultas de ginecologia e planeamento familiar.
+
+Do Médico para a Paciente:
+
+Olá, como posso ajudar hoje?
+
+Por favor, sente-se.
+
+Onde sente dor?
+
+Quando foi a sua última menstruação?
+
+O seu ciclo é regular?
+
+Tem tido sangramento intenso?
+
+Qual é o seu método contracetivo atual?
+
+Sente-se confortável?
+
+Não tenha medo, estou aqui para ajudar.
+
+Tudo o que dissermos aqui é confidencial e privado.
+
+Vou prescrever uma receita médica.
+
+O exame não vai doer, relaxe.
+
+Vamos fazer um teste de gravidez.
+
+O tratamento dura sete dias.
+
+Tem alguma dúvida?
+
+Da Paciente para o Médico:
+16. A minha menstruação está atrasada.
+17. Tenho muitas cólicas durante o ciclo.
+18. Preciso de métodos de prevenção.
+19. Quero mudar a minha pílula.
+20. O penso higiénico causa-me irritação.
+21. Sinto ardor e comichão.
+22. Gostaria de planear uma gravidez.
+23. Tenho medo do exame médico.
+24. Tenho dúvidas sobre planeamento familiar.
+25. Não me sinto bem com o meu corpo.
+26. Quero fazer um exame de rotina.
+27. Não entendi, pode explicar de novo?
+28. Preciso de privacidade para me despir.
+29. Obrigada por me ouvir com respeito.
+30. Até à próxima consulta.
+
+3. Guião de Encenação para o Pitch (Aprox. 2 Minutos)
+
+Contexto para a plateia/júri: O palco está dividido. De um lado, o Médico a olhar para o monitor. Do outro, a Paciente Surda. No ecrã grande do evento, o público vê a interface do vosso sistema a funcionar em tempo real.
+
+(Início da Encenação)
+
+MÉDICO (Fala para o sistema / O sistema transcreve e mostra um avatar/vídeo em LGA):
+"Olá, bom dia. Sou o Doutor João. Como posso ajudar hoje? Sente alguma dor?"
+
+PACIENTE (Faz os gestos para a câmara do sistema / O sistema traduz para texto no ecrã do médico):
+[Texto no ecrã]: "Bom dia. Sim. Tenho muitas cólicas. A minha menstruação está atrasada há um mês."
+
+MÉDICO (Lê o ecrã, sorri com empatia e fala para o sistema):
+"Compreendo. Não tenha medo, estou aqui para ajudar e tudo aqui é confidencial. Vamos fazer um exame de rotina. Sente-se confortável com isso?"
+
+PACIENTE (Faz gestos para a câmara / Tradução no ecrã):
+[Texto no ecrã]: "Tenho medo. E também quero mudar a minha pílula. Sinto-me mal."
+
+MÉDICO (Fala para o sistema):
+"É normal sentir medo, mas o exame não vai doer. Respire fundo. Depois do exame, vou prescrever uma nova receita médica para a sua pílula, mais adequada para o seu corpo."
+
+PACIENTE (Faz gestos aliviada / Tradução no ecrã):
+[Texto no ecrã]: "Muito obrigada. Ter privacidade e respeito ajuda muito. Sem intérprete é melhor."
+
+MÉDICO (Fala para o sistema):
+"A sua saúde e dignidade são a nossa prioridade. Por favor, vá à sala ao lado para começarmos o exame."
+
+(Fim da Encenação)
+
+Narrador/Apresentador da Equipa (Vira-se para os Jurados):
+"Como viram, em menos de 2 minutos, quebramos a barreira da comunicação. Sem o nosso sistema, esta mulher precisaria de trazer um familiar para traduzir detalhes íntimos sobre a sua menstruação e métodos contracetivos, perdendo toda a sua privacidade. Com a nossa solução, garantimos Atendimento Digno, Inclusivo e Okuyeva na Saúde Sexual e Reprodutiva."

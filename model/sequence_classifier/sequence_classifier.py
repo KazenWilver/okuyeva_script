@@ -1,13 +1,15 @@
 """
-Zero Barreiras — Sequence Classifier (LSTM for Dynamic Gestures)
+Okuyeva — Sequence Classifier (LSTM for Dynamic Gestures)
 
 Architecture:
   Input:  (batch, seq_len, 1662)  — 30 frames of holistic features
-  LSTM:   3 layers (64→128→64) with dropout
+  LSTM:   2 layers bidirectional (64 hidden) with dropout
   Output: (batch, num_classes)    — gesture probabilities
 
-Handles variable-length sequences via padding.
-Supports GPU acceleration (CUDA) when available.
+Optimized for small datasets (<100 samples) with:
+  - Smaller architecture to prevent overfitting
+  - Feature normalization (mean/std from training data)
+  - Class mapping for partial label training
 """
 import os
 import numpy as np
@@ -16,13 +18,21 @@ import torch.nn as nn
 
 
 class GestureLSTM(nn.Module):
-    """Bidirectional LSTM for temporal gesture classification."""
+    """Bidirectional LSTM for temporal gesture classification.
+    
+    Optimized for small datasets:
+    - 2 layers instead of 3 (less overfitting)
+    - 64 hidden units instead of 128
+    - Total ~660K params vs 2.6M before
+    """
 
-    def __init__(self, input_size=1662, hidden_size=128, num_layers=3,
-                 num_classes=15, dropout=0.3):
+    def __init__(self, input_size=1662, hidden_size=64, num_layers=2,
+                 num_classes=15, dropout=0.4):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+
+        self.input_norm = nn.LayerNorm(input_size)
 
         self.lstm = nn.LSTM(
             input_size=input_size,
@@ -38,18 +48,18 @@ class GestureLSTM(nn.Module):
             nn.Linear(hidden_size * 2, 64),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(32, num_classes),
+            nn.Linear(64, num_classes),
         )
 
     def forward(self, x):
         # x shape: (batch, seq_len, input_size)
+        x = self.input_norm(x)
         lstm_out, _ = self.lstm(x)
-        # Take the last time step output
-        last_output = lstm_out[:, -1, :]
-        return self.classifier(last_output)
+        # Use both first and last hidden states for richer representation
+        last_fwd = lstm_out[:, -1, :self.hidden_size]
+        last_bwd = lstm_out[:, 0, self.hidden_size:]
+        combined = torch.cat([last_fwd, last_bwd], dim=1)
+        return self.classifier(combined)
 
 
 class SequenceClassifier:
@@ -64,7 +74,9 @@ class SequenceClassifier:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = None
         self.labels = []
-        self.class_id_to_label = {}  # Maps model output ID → gesture name
+        self.class_id_to_label = {}
+        self.feat_mean = None
+        self.feat_std = None
 
         if labels_path and os.path.exists(labels_path):
             with open(labels_path, encoding='utf-8-sig') as f:
@@ -74,29 +86,39 @@ class SequenceClassifier:
             checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
             num_classes = checkpoint.get('num_classes', len(self.labels))
             input_size = checkpoint.get('input_size', 1662)
+            hidden_size = checkpoint.get('hidden_size', 64)
+            num_layers = checkpoint.get('num_layers', 2)
 
-            # Load class mapping (new format with remapped IDs)
+            # Load class mapping
             if 'class_id_to_label' in checkpoint:
-                # Convert string keys back to int
                 self.class_id_to_label = {
                     int(k): v for k, v in checkpoint['class_id_to_label'].items()
                 }
             else:
-                # Legacy format: assume 1:1 mapping
                 self.class_id_to_label = {
                     i: self.labels[i] if i < len(self.labels) else f"Classe {i}"
                     for i in range(num_classes)
                 }
 
+            # Load normalization stats
+            if 'feat_mean' in checkpoint:
+                self.feat_mean = torch.FloatTensor(checkpoint['feat_mean']).to(self.device)
+                self.feat_std = torch.FloatTensor(checkpoint['feat_std']).to(self.device)
+                # Replace zeros to avoid division by zero
+                self.feat_std[self.feat_std < 1e-8] = 1.0
+
             self.model = GestureLSTM(
                 input_size=input_size,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
                 num_classes=num_classes,
             ).to(self.device)
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.model.eval()
-            print(f"[SEQ] Loaded model from {model_path} on {self.device}")
-            print(f"[SEQ] Classes: {num_classes}, Input: {input_size}")
+            print(f"[SEQ] Model: {model_path} on {self.device}")
+            print(f"[SEQ] Classes: {num_classes} | Arch: LSTM({hidden_size}x{num_layers})")
             print(f"[SEQ] Labels: {self.class_id_to_label}")
+            print(f"[SEQ] Normalization: {'Yes' if self.feat_mean is not None else 'No'}")
 
     @property
     def is_loaded(self):
@@ -116,6 +138,11 @@ class SequenceClassifier:
             return -1, 0.0
 
         x = torch.FloatTensor(sequence).unsqueeze(0).to(self.device)
+
+        # Apply feature normalization if available
+        if self.feat_mean is not None:
+            x = (x - self.feat_mean) / self.feat_std
+
         logits = self.model(x)
         probs = torch.softmax(logits, dim=1)
         confidence, idx = torch.max(probs, dim=1)

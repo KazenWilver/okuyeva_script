@@ -12,125 +12,135 @@ export default function Consulta() {
   const [confidence, setConfidence] = useState(0)
   const [lstmReady, setLstmReady] = useState(false)
   
-  // High Performance Transmission Loop - Pulling texts only
   useEffect(() => {
     const fetchState = async () => {
       try {
-        const response = await fetch("http://localhost:8000/tracking_state")
-        const data = await response.json()
+        const res = await fetch("http://localhost:8000/tracking_state")
+        const data = await res.json()
         setTranscription(data.gesture || "")
         setIsConnected(data.camera_active)
         setGestureType(data.gesture_type || "none")
         setConfidence(Math.round((data.confidence || 0) * 100))
         setLstmReady(data.lstm_available || false)
-      } catch (err) {
-        setIsConnected(false)
-      }
+      } catch { setIsConnected(false) }
     }
-
-    const intervalId = setInterval(fetchState, 100);
-
-    return () => {
-      clearInterval(intervalId);
-    }
+    const id = setInterval(fetchState, 100)
+    return () => clearInterval(id)
   }, [])
 
   return (
     <motion.div 
-      className="min-h-screen bg-slate-50 flex flex-col items-center pb-12"
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
+      className="w-full h-full flex flex-col px-4 sm:px-6 py-4 sm:py-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
+      transition={{ duration: 0.3 }}
     >
-      <div className="w-full max-w-6xl px-4 sm:px-6 lg:px-8 mt-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate('/menu')}
+            className="strata-card w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center cursor-pointer !rounded-full"
+          >
+            <ArrowLeft size={15} />
+          </button>
+          <span className="mono-tag">Em Consulta</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 pulse-ring' : 'bg-gray-300'}`} />
+          <span className="mono-label">{isConnected ? 'ACTIVO' : 'A LIGAR...'}</span>
+        </div>
+      </div>
+
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_0.7fr] gap-4 flex-1 min-h-0">
         
-        <header className="flex items-center justify-between bg-white rounded-3xl shadow-sm p-4 sm:p-6 mb-6">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => navigate('/menu')}
-              className="p-3 rounded-full hover:bg-slate-100 text-slate-500 transition-colors"
-            >
-              <ArrowLeft size={24} />
-            </button>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800">Em Consulta</h1>
-          </div>
-          <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-full border border-slate-200">
-            <div className={`w-3 h-3 rounded-full flex-shrink-0 ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            <span className="text-sm font-bold text-slate-600 hidden sm:inline-block">
-              {isConnected ? 'Hardware C++ Ativo' : 'A Ligar AI...'}
-            </span>
-          </div>
-        </header>
+        {/* Video Feed */}
+        <div className="strata-card flex items-center justify-center min-h-[200px] sm:min-h-[280px] !overflow-hidden">
+          <img 
+            src="http://localhost:8000/video_feed" 
+            alt="Video Feed" 
+            className="w-full h-full object-cover absolute inset-0" 
+            onError={(e) => { e.target.style.display = 'none' }}
+            onLoad={(e) => { e.target.style.display = 'block' }}
+            style={{ display: 'none', borderRadius: '12px' }}
+          />
+          {!isConnected && (
+            <div className="flex flex-col items-center gap-3">
+              <Video size={28} strokeWidth={1} style={{ color: 'rgba(0,0,0,0.15)' }} />
+              <span className="mono-label">A AGUARDAR API...</span>
+            </div>
+          )}
+        </div>
 
-        <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Right Panel */}
+        <div className="flex flex-col gap-3 sm:gap-4">
           
-          <div className="lg:col-span-2 bg-black rounded-3xl overflow-hidden shadow-xl border-4 border-slate-800 relative aspect-video flex items-center justify-center">
-            <img 
-              src="http://localhost:8000/video_feed" 
-              alt="Video Feed" 
-              className="w-full h-full object-cover" 
-              onError={(e) => { e.target.style.display = 'none'; }}
-              onLoad={(e) => { e.target.style.display = 'block'; }}
-              style={{ display: 'none' }}
-            />
-            {/* Fallback layout when image stream dies */}
-            {!isConnected && (
-              <div className="absolute text-slate-500 flex flex-col items-center">
-                <Video size={48} className="mb-4 opacity-50 animate-pulse" />
-                <p className="font-semibold text-lg text-center">A aguardar API Nativa do Python...</p>
+          {/* Transcrição */}
+          <div className="strata-card p-5 sm:p-7 flex-1 flex flex-col !hover:transform-none" style={{ minHeight: '100px' }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Activity size={12} className="text-emerald-400" />
+                <span className="mono-label">Transcrição</span>
               </div>
-            )}
-          </div>
-
-          <div className="lg:col-span-1 flex flex-col gap-6">
-            <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex-1 flex flex-col justify-center">
-              <div className="flex items-center gap-2 mb-4">
-                <Activity size={20} className="text-sky-500 animate-pulse" />
-                <h3 className="text-sm font-bold text-sky-500 uppercase tracking-widest">Transcrição Directa</h3>
-                {gestureType !== "none" && (
-                  <span className={`ml-auto text-xs font-bold px-2 py-1 rounded-full ${
-                    gestureType === "dynamic" 
-                      ? "bg-orange-100 text-orange-600" 
-                      : "bg-blue-100 text-blue-600"
-                  }`}>
-                    {gestureType === "dynamic" ? "🔄 Dinâmico" : "📌 Estático"}
-                  </span>
-                )}
-              </div>
-              
-              <div className="text-2xl sm:text-3xl font-bold text-slate-800 break-words">
-                {transcription && transcription.trim() !== "" ? (
-                  <>
-                    <span className="text-emerald-600">{transcription.toUpperCase()}</span>
-                    <span className="block text-sm font-medium text-slate-400 mt-2">
-                      Confiança: {confidence}%
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-slate-400 font-medium text-xl">Comece a falar gestualmente...</span>
-                )}
-              </div>
+              {gestureType !== "none" && (
+                <span className="mono-label px-2.5 py-1 rounded-full" style={{ background: 'rgba(52,211,153,0.1)', color: 'var(--accent-green)', fontSize: '0.6rem' }}>
+                  {gestureType === "dynamic" ? "LSTM" : "STATIC"}
+                </span>
+              )}
             </div>
             
-            <div className="bg-slate-800 rounded-3xl p-6 border border-slate-700">
-              <p className="text-sm text-slate-300 font-medium leading-relaxed">
-                🚀 <strong className="text-emerald-400">Motor Neural v2:</strong> 
-                <br/><br/>
-                MediaPipe Holistic (1662 pontos: corpo + face + mãos) 
-                {lstmReady 
-                  ? <> + <strong className="text-orange-400">LSTM GPU</strong> para reconhecimento dinâmico de sequências de movimento.</>
-                  : <> + <strong className="text-blue-400">MLP Estático</strong> (LSTM não treinado ainda).</>
-                }
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${lstmReady ? 'bg-orange-400' : 'bg-blue-400'}`} />
-                <span className="text-xs text-slate-400">{lstmReady ? 'LSTM Dinâmico Ativo' : 'Modo Estático (Fallback)'}</span>
-              </div>
+            <div className="flex-1 flex flex-col justify-center">
+              {transcription && transcription.trim() !== "" ? (
+                <div>
+                  <div className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tighter leading-none break-words uppercase">
+                    {transcription}
+                  </div>
+                  <span className="mono-label mt-3 block">CONFIANÇA: {confidence}%</span>
+                </div>
+              ) : (
+                <p className="text-sm" style={{ color: 'var(--text-mono)' }}>
+                  Comece a falar gestualmente...
+                </p>
+              )}
             </div>
           </div>
 
-        </main>
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <div className="strata-card p-4 sm:p-5">
+              <span className="mono-label block mb-2">Confiança</span>
+              <div className="flex items-end gap-1">
+                <span className="text-2xl sm:text-3xl font-extrabold leading-none">{confidence}</span>
+                <span className="mono-label">%</span>
+              </div>
+              <div className="mt-3 h-[3px] w-full rounded-full" style={{ background: 'rgba(0,0,0,0.06)' }}>
+                <motion.div 
+                  className="h-full rounded-full bg-emerald-400"
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${confidence}%` }}
+                  transition={{ duration: 0.4 }}
+                />
+              </div>
+            </div>
+
+            <div className="strata-card p-4 sm:p-5">
+              <span className="mono-label block mb-2">Motor</span>
+              <div className="mono-label leading-[1.9]" style={{ fontSize: '0.6rem' }}>
+                MEDIAPIPE HOLISTIC<br/>
+                {lstmReady ? 'LSTM BiDIR ✓' : 'AGUARDANDO TREINO'}<br/>
+                &lt;50MS LATÊNCIA
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <div className={`w-1.5 h-1.5 rounded-full ${lstmReady ? 'bg-emerald-400' : 'bg-gray-300'}`} />
+                <span className="mono-label" style={{ fontSize: '0.55rem' }}>
+                  {lstmReady ? 'ACTIVO' : 'ESPERA'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </motion.div>
   )

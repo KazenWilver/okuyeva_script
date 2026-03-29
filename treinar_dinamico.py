@@ -1,8 +1,15 @@
 """
-Zero Barreiras — Treino do Modelo Dinâmico (LSTM)
+Okuyeva — Treino do Modelo Dinâmico (LSTM)
 
 Treina um LSTM bidireccional sobre sequências de 30 frames × 1662 features.
 Suporta GPU (CUDA) automaticamente.
+
+Optimizações para datasets pequenos:
+  - Modelo menor (64 hidden, 2 layers) para evitar overfitting
+  - Class weights para balancear classes desiguais
+  - Feature normalization (mean/std guardados no checkpoint)
+  - Augmentação agressiva: ruído, time-warp, mirror, feature dropout
+  - Gradient clipping para estabilidade
 
 Uso:
   python treinar_dinamico.py
@@ -25,10 +32,10 @@ SEQUENCE_LENGTH = 30
 NUM_FEATURES = 1662
 
 BATCH_SIZE = 16
-EPOCHS = 150
-LEARNING_RATE = 0.001
-AUGMENT_FACTOR = 3
-AUGMENT_NOISE = 0.01
+EPOCHS = 200
+LEARNING_RATE = 0.0005
+AUGMENT_FACTOR = 7       # More augmentation for small datasets
+AUGMENT_NOISE = 0.015
 RANDOM_SEED = 42
 
 torch.manual_seed(RANDOM_SEED)
@@ -50,35 +57,101 @@ class GestureSequenceDataset(Dataset):
         return self.sequences[idx], self.labels[idx]
 
 
+# ── Augmentation Functions ──
+
 def time_warp(sequence, sigma=0.2):
-    """Apply random temporal warping to a sequence.
-    Simulates different gesture speeds.
-    """
+    """Apply random temporal warping. Simulates different gesture speeds."""
     seq_len = len(sequence)
-    # Generate random time steps
     orig_steps = np.arange(seq_len)
     warp = np.random.normal(loc=1.0, scale=sigma, size=seq_len)
     warp = np.cumsum(warp)
-    warp = warp / warp[-1] * (seq_len - 1)  # normalize to original range
+    warp = warp / warp[-1] * (seq_len - 1)
 
-    # Interpolate each feature
     warped = np.zeros_like(sequence)
     for feat_idx in range(sequence.shape[1]):
         warped[:, feat_idx] = np.interp(orig_steps, warp, sequence[:, feat_idx])
-
     return warped
 
 
+def mirror_sequence(sequence):
+    """Mirror left/right by flipping x-coords and swapping hands.
+    
+    Feature layout (1662 total):
+      Pose:  0:132   (33 landmarks × 4: x,y,z,vis)  — x every 4 values
+      Face:  132:1536 (468 landmarks × 3: x,y,z)     — x every 3 values  
+      LH:    1536:1599 (21 landmarks × 3: x,y,z)     — x every 3 values
+      RH:    1599:1662 (21 landmarks × 3: x,y,z)     — x every 3 values
+    """
+    mirrored = sequence.copy()
+    
+    # Flip x coordinates in pose (every 4th value starting at 0)
+    for i in range(0, 132, 4):
+        mirrored[:, i] = 1.0 - mirrored[:, i]
+    
+    # Flip x coordinates in face (every 3rd value starting at 132)
+    for i in range(132, 1536, 3):
+        mirrored[:, i] = 1.0 - mirrored[:, i]
+    
+    # Flip x in left hand and right hand
+    for i in range(1536, 1662, 3):
+        mirrored[:, i] = 1.0 - mirrored[:, i]
+    
+    # Swap left hand and right hand feature blocks
+    lh = mirrored[:, 1536:1599].copy()
+    rh = mirrored[:, 1599:1662].copy()
+    mirrored[:, 1536:1599] = rh
+    mirrored[:, 1599:1662] = lh
+    
+    return mirrored
+
+
+def feature_dropout(sequence, drop_rate=0.05):
+    """Randomly zero out some features (simulates occlusion)."""
+    mask = np.random.random(sequence.shape) > drop_rate
+    return sequence * mask
+
+
+def speed_variation(sequence, factor_range=(0.7, 1.3)):
+    """Simulate different gesture speeds by resampling."""
+    seq_len = len(sequence)
+    factor = np.random.uniform(*factor_range)
+    new_len = max(5, int(seq_len * factor))
+    
+    indices_orig = np.linspace(0, seq_len - 1, new_len)
+    indices_target = np.linspace(0, seq_len - 1, seq_len)
+    
+    resampled = np.zeros_like(sequence)
+    for feat_idx in range(sequence.shape[1]):
+        values = np.interp(indices_orig, np.arange(seq_len), sequence[:, feat_idx])
+        resampled[:, feat_idx] = np.interp(indices_target, indices_orig, values)
+    
+    return resampled
+
+
 def augment_sequence(sequence, noise_std=AUGMENT_NOISE):
-    """Add Gaussian noise + temporal warping."""
-    noisy = sequence + np.random.normal(0, noise_std, sequence.shape)
-    return time_warp(noisy.astype(np.float32))
+    """Apply random combination of augmentations."""
+    aug = sequence.copy()
+    
+    # Always add noise
+    aug = aug + np.random.normal(0, noise_std, aug.shape)
+    
+    # Random augmentations
+    r = np.random.random()
+    if r < 0.3:
+        aug = time_warp(aug.astype(np.float32))
+    elif r < 0.5:
+        aug = speed_variation(aug.astype(np.float32))
+    
+    if np.random.random() < 0.3:
+        aug = feature_dropout(aug.astype(np.float32))
+    
+    return aug.astype(np.float32)
 
 
 # ── Main ──
 def main():
     print("=" * 62)
-    print("  TREINO DINÂMICO — Zero Barreiras (LSTM)")
+    print("  TREINO DINÂMICO — Okuyeva (LSTM v2)")
     print(f"  Device: {device}")
     print("=" * 62)
 
@@ -108,7 +181,6 @@ def main():
 
         for npy_path in npy_files:
             seq = np.load(npy_path)
-            # Ensure correct shape
             if seq.shape == (SEQUENCE_LENGTH, NUM_FEATURES):
                 all_sequences.append(seq)
                 all_labels.append(class_id)
@@ -126,7 +198,7 @@ def main():
     unique_classes = sorted(np.unique(y))
     NUM_CLASSES = len(unique_classes)
 
-    # Remap class IDs to 0..N-1 (critical for softmax with few classes)
+    # Remap class IDs to 0..N-1
     class_remap = {old_id: new_id for new_id, old_id in enumerate(unique_classes)}
     class_id_to_label = {new_id: labels[old_id] if old_id < len(labels) else f"Classe {old_id}" 
                          for old_id, new_id in class_remap.items()}
@@ -148,18 +220,47 @@ def main():
         print("\nERRO: Precisa de pelo menos 2 classes com dados.")
         exit(1)
 
+    # ── Feature Normalization ──
+    # Compute mean/std across all sequences and frames
+    X_flat = X.reshape(-1, NUM_FEATURES)  # (total_frames, features)
+    feat_mean = X_flat.mean(axis=0)
+    feat_std = X_flat.std(axis=0)
+    feat_std[feat_std < 1e-8] = 1.0  # avoid division by zero
+    
+    # Normalize training data
+    X = (X - feat_mean[np.newaxis, np.newaxis, :]) / feat_std[np.newaxis, np.newaxis, :]
+    print(f"\nFeature normalization: mean range [{feat_mean.min():.4f}, {feat_mean.max():.4f}]")
+    print(f"                       std range  [{feat_std.min():.4f}, {feat_std.max():.4f}]")
+
+    # ── Class Weights ──
+    class_counts = np.bincount(y, minlength=NUM_CLASSES).astype(np.float32)
+    class_weights = 1.0 / (class_counts + 1e-6)
+    class_weights = class_weights / class_weights.sum() * NUM_CLASSES  # normalize
+    class_weights_tensor = torch.FloatTensor(class_weights).to(device)
+    print(f"\nClass weights: {dict(zip([class_id_to_label[i] for i in range(NUM_CLASSES)], [f'{w:.2f}' for w in class_weights]))}")
+
     # ── Data Augmentation ──
-    print(f"\nAugmentation: {AUGMENT_FACTOR}x (ruído + time-warping)...")
+    print(f"\nAugmentation: {AUGMENT_FACTOR}x (ruído + time-warp + mirror + dropout + speed)...")
     X_aug = [X]
     y_aug = [y]
+    
+    # Standard augmentations
     for _ in range(AUGMENT_FACTOR):
         augmented = np.array([augment_sequence(seq) for seq in X])
         X_aug.append(augmented)
         y_aug.append(y)
+    
+    # Add mirrored versions (doubles effective dataset)
+    X_mirror = np.array([mirror_sequence(seq) for seq in X])
+    # Normalize mirrored data
+    X_mirror_raw = X_mirror * feat_std[np.newaxis, np.newaxis, :] + feat_mean[np.newaxis, np.newaxis, :]
+    X_mirror_norm = (X_mirror_raw - feat_mean[np.newaxis, np.newaxis, :]) / feat_std[np.newaxis, np.newaxis, :]
+    X_aug.append(X_mirror_norm)
+    y_aug.append(y)
 
     X_full = np.vstack(X_aug)
     y_full = np.hstack(y_aug)
-    print(f"Dataset aumentado: {len(X_full)} sequências ({AUGMENT_FACTOR + 1}x)")
+    print(f"Dataset aumentado: {len(X_full)} sequências ({len(X_aug)}x fontes)")
 
     # ── Split ──
     X_train, X_test, y_train, y_test = train_test_split(
@@ -173,29 +274,31 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-    # ── Model ──
+    # ── Model (smaller, optimized for small datasets) ──
+    HIDDEN_SIZE = 64
+    NUM_LAYERS = 2
+    
     model = GestureLSTM(
         input_size=NUM_FEATURES,
-        hidden_size=128,
-        num_layers=3,
-        num_classes=NUM_CLASSES,  # Only classes with actual training data
-        dropout=0.3,
+        hidden_size=HIDDEN_SIZE,
+        num_layers=NUM_LAYERS,
+        num_classes=NUM_CLASSES,
+        dropout=0.4,
     ).to(device)
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=10,
-    )
+    criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"\nModelo: {total_params:,} parâmetros")
+    print(f"\nModelo: {total_params:,} parâmetros (vs 2.6M antes)")
+    print(f"Arch: LSTM({HIDDEN_SIZE}x{NUM_LAYERS} BiDir) + FC(64→{NUM_CLASSES})")
     print(f"A treinar por {EPOCHS} epochs...\n")
 
     # ── Training Loop ──
     best_acc = 0.0
     patience_counter = 0
-    PATIENCE = 25
+    PATIENCE = 35
 
     for epoch in range(1, EPOCHS + 1):
         model.train()
@@ -211,6 +314,10 @@ def main():
             outputs = model(batch_x)
             loss = criterion(outputs, batch_y)
             loss.backward()
+            
+            # Gradient clipping for stability
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
             optimizer.step()
 
             train_loss += loss.item()
@@ -219,6 +326,7 @@ def main():
             train_correct += (predicted == batch_y).sum().item()
 
         train_acc = train_correct / train_total
+        scheduler.step()
 
         # Validation
         model.eval()
@@ -240,9 +348,7 @@ def main():
         val_acc = val_correct / val_total
         avg_val_loss = val_loss / len(test_loader)
 
-        scheduler.step(avg_val_loss)
-
-        if epoch % 5 == 0 or epoch == 1:
+        if epoch % 10 == 0 or epoch == 1:
             print(f"  Epoch {epoch:3d}/{EPOCHS} | "
                   f"Train: {train_acc*100:.1f}% | "
                   f"Val: {val_acc*100:.1f}% | "
@@ -252,15 +358,18 @@ def main():
         if val_acc > best_acc:
             best_acc = val_acc
             patience_counter = 0
-            # Save best model
             torch.save({
                 'model_state_dict': model.state_dict(),
                 'num_classes': NUM_CLASSES,
                 'input_size': NUM_FEATURES,
+                'hidden_size': HIDDEN_SIZE,
+                'num_layers': NUM_LAYERS,
                 'sequence_length': SEQUENCE_LENGTH,
                 'labels': labels,
                 'class_id_to_label': class_id_to_label,
                 'class_remap': class_remap,
+                'feat_mean': feat_mean.tolist(),
+                'feat_std': feat_std.tolist(),
                 'best_accuracy': best_acc,
             }, MODEL_SAVE_PATH)
         else:
@@ -277,7 +386,6 @@ def main():
     print(f"\n{'=' * 62}")
     print(f"  MELHOR PRECISÃO: {best_acc * 100:.2f}%")
 
-    # Per-class accuracy
     class_correct = {}
     class_total = {}
 
@@ -308,11 +416,11 @@ def main():
 
     print("\n" + "=" * 62)
     if best_acc >= 0.90:
-        print("  MODELO PRONTO PARA DEMO!")
+        print("  ✅ MODELO PRONTO PARA DEMO!")
     elif best_acc >= 0.75:
-        print("  BOM! Recolha mais dados para melhorar.")
+        print("  ⚠️  BOM! Recolha mais dados para melhorar.")
     else:
-        print("  PRECISA DE MAIS DADOS. Use coleta_dinamica.py")
+        print("  ❌ PRECISA DE MAIS DADOS. Use coleta_dinamica.py")
     print("=" * 62)
 
 

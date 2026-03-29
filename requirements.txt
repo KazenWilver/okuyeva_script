@@ -1,5 +1,5 @@
 # ============================================================
-#  Zero Barreiras - Dependências Completas
+#  Okuyeva - Dependências Completas
 #  Instalar: pip install -r requirements.txt
 # ============================================================
 
