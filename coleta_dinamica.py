@@ -33,10 +33,13 @@ from features_v2 import (
     has_hands, draw_landmarks, NUM_FEATURES_V2,
 )
 
-# ── Paths ──
+# ── Paths & Configs ──
 SEQUENCE_DIR = 'model/sequence_classifier/sequences'
 STATIC_CSV = 'model/sequence_classifier/static_keypoints.csv'
 LABEL_CSV = 'model/sequence_classifier/sequence_classifier_label.csv'
+
+# MUDE AQUI O NÚMERO DA CÂMARA (0 = Webcam do PC, 1 ou 2 = Iriun Webcam/Externa)
+CAMERA_INDEX = 2 
 
 SEQUENCE_LENGTH = 30   # normalized output length
 MIN_FRAMES = 10        # minimum frames to accept a sequence
@@ -118,15 +121,25 @@ def save_sequence(label_name, sequence_frames):
 def key_to_class(key):
     if 48 <= key <= 57:     # 0-9
         return key - 48
-    if 97 <= key <= 101:    # a-e
+    if 97 <= key <= 122:    # a-z (minúsculas)
         return key - 97 + 10
+    if 65 <= key <= 90:     # A-Z (maiúsculas)
+        return key - 65 + 10
     return -1
 
 
+mouse_click_point = None
+
+def mouse_callback(event, x, y, flags, param):
+    global mouse_click_point
+    if event == cv.EVENT_LBUTTONDOWN:
+        mouse_click_point = (x, y)
+
+
 def draw_dashboard(image, labels, dyn_counts, sta_counts, selected_class, mode, x_start, y_start):
-    """Draw class dashboard with both dynamic and static counts."""
+    """Draw class dashboard with both dynamic and static counts. Returns bounding boxes."""
     h_line = 18
-    max_cols = 2
+    max_cols = 3  # Aumentado para 3 colunas para caber 31 classes
     items_per_col = (len(labels) + max_cols - 1) // max_cols
     col_w = 260
 
@@ -139,31 +152,39 @@ def draw_dashboard(image, labels, dyn_counts, sta_counts, selected_class, mode, 
     cv.addWeighted(overlay, 0.85, image, 0.15, 0, image)
 
     mode_str = "DINAMICO" if mode == 'dynamic' else "ESTATICO"
-    cv.putText(image, f"CLASSES ({mode_str}):", (x_start + 5, y_start + 15),
+    cv.putText(image, f"CLASSES ({mode_str}) | Clique na classe ou navegue (,/.)", (x_start + 5, y_start + 15),
                cv.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+
+    click_boxes = []
 
     for i, label in enumerate(labels):
         col = i // items_per_col
         row = i % items_per_col
         x = x_start + 5 + col * col_w
         y = y_start + 35 + row * h_line
+        
+        click_boxes.append((i, x, y - 14, x + col_w - 10, y + 4))
 
         dn = dyn_counts.get(i, 0)
         sn = sta_counts.get(i, 0)
-        k = str(i) if i < 10 else chr(97 + i - 10)
+        
+        # Format index to always be 2 digits
+        idx_str = f"{i:02d}"
 
         if i == selected_class:
             color = (0, 255, 0)
-            txt = f">[{k}] {label}: D={dn} S={sn}"
+            txt = f">[{idx_str}] {label}: D={dn} S={sn}"
         elif dn > 0 or sn > 0:
             color = (200, 200, 100)
-            txt = f" [{k}] {label}: D={dn} S={sn}"
+            txt = f" [{idx_str}] {label}: D={dn} S={sn}"
         else:
             color = (120, 120, 120)
-            txt = f" [{k}] {label}: --"
+            txt = f" [{idx_str}] {label}: --"
 
         cv.putText(image, txt, (x, y),
                    cv.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
+
+    return click_boxes
 
 
 def main():
@@ -177,22 +198,15 @@ def main():
     dyn_counts = count_sequences(labels)
     sta_counts = count_static_samples()
 
-    # Camera setup — probe for physical camera
-    cap = None
-    for i in range(3):
-        temp_cap = cv.VideoCapture(i, cv.CAP_DSHOW)
-        if temp_cap.isOpened():
-            ret, frame = temp_cap.read()
-            if ret:
-                if cap is not None:
-                    cap.release()
-                cap = temp_cap
-                print(f"[CAM] Using Camera Index: {i}")
-                if i == 1:
-                    break
-
-    if cap is None or not cap.isOpened():
-        print("[CAM] Camera Initialization Failed")
+    print(f"[CAM] Inicializando Camara {CAMERA_INDEX}...")
+    cap = cv.VideoCapture(CAMERA_INDEX, cv.CAP_DSHOW)
+    
+    # Tenta inicializar sem DSHOW se falhar
+    if not cap.isOpened():
+        cap = cv.VideoCapture(CAMERA_INDEX)
+        
+    if not cap.isOpened():
+        print(f"[ERRO] Falha ao abrir a câmara {CAMERA_INDEX}. Edite a variavel CAMERA_INDEX no codigo.")
         return
 
     cap.set(cv.CAP_PROP_FRAME_WIDTH, 960)
@@ -219,12 +233,11 @@ def main():
     print("=" * 62)
     print("  COLETA DE DADOS v2 — Okuyeva")
     print("  MediaPipe Holistic (1662 features)")
-    print("  Modos: [D] Dinâmico  [E] Estático")
+    print("  Modos: []] Dinâmico  [[] Estático")
     print("=" * 62)
-    print("  [0-9] Classe 0-9   |  [A-E] Classe 10-14")
-    print("  [SPACE] Gravar     |  [T] Dashboard")
-    print("  [D] Modo Dinâmico  |  [E] Modo Estático")
-    print("  [Q/ESC] Sair")
+    print("  [0-9] Classes 0-9  |  [A-Z] Classes 10-35")
+    print("  [SPACE] Gravar     |  [ / ] Dashboard")
+    print("  [ < , > ] Navegar  |  [Q/ESC] Sair")
     print()
     if labels:
         for i, label in enumerate(labels):
@@ -234,6 +247,11 @@ def main():
             print(f"    [{k}] {i:2d}: {label} (D={dn} S={sn})")
     print(f"\n    Modo actual: DINÂMICO")
     print("=" * 62)
+
+    cv.namedWindow("Coleta Dinamica — Okuyeva")
+    cv.setMouseCallback("Coleta Dinamica — Okuyeva", mouse_callback)
+
+    click_boxes = []
 
     while True:
         ret, image = cap.read()
@@ -252,26 +270,49 @@ def main():
 
         key = cv.waitKey(1) & 0xFF
 
+        # ── Mouse processing ──
+        global mouse_click_point
+        if mouse_click_point is not None:
+            mx, my = mouse_click_point
+            mouse_click_point = None
+            if show_dashboard and click_boxes:
+                for box in click_boxes:
+                    idx, x1, y1, x2, y2 = box
+                    if x1 <= mx <= x2 and y1 <= my <= y2:
+                        selected_class = idx
+                        samples_this_session = 0
+                        session_start = time.time()
+                        cls_name = labels[selected_class]
+                        print(f"[CLASS] Classe [{selected_class}] '{cls_name}' seleccionada via RATO.")
+                        break
+
         # ── Mode switching ──
-        if key == ord('d') or key == ord('D'):
+        if key == ord(']') or key == ord('}'):
             mode = 'dynamic'
             recording_static = False
             dynamic_buffer = []
             recording_dynamic = False
             print(f"[MODE] Modo DINÂMICO activado")
 
-        if key == ord('e') or key == ord('E'):
+        if key == ord('[') or key == ord('{'):
             mode = 'static'
             recording_static = False
             dynamic_buffer = []
             recording_dynamic = False
             print(f"[MODE] Modo ESTÁTICO activado")
 
-        if key == ord('t') or key == ord('T'):
+        if key == ord('/') or key == ord('?'):
             show_dashboard = not show_dashboard
 
         # ── Class selection ──
         cls_from_key = key_to_class(key)
+        
+        # Navigate with , and . (previous/next)
+        if key == ord(',') or key == ord('<'):
+            cls_from_key = max(0, selected_class - 1) if selected_class >= 0 else 0
+        elif key == ord('.') or key == ord('>'):
+            cls_from_key = min(len(labels) - 1, selected_class + 1) if selected_class >= 0 else 0
+
         if cls_from_key >= 0 and cls_from_key < len(labels):
             selected_class = cls_from_key
             samples_this_session = 0
@@ -461,13 +502,22 @@ def main():
 
         # Dashboard
         if show_dashboard and labels:
-            draw_dashboard(image, labels, dyn_counts, sta_counts,
-                          selected_class, mode, 5, h - 220)
+            h_line = 18
+            max_cols = 3
+            items_per_col = (len(labels) + max_cols - 1) // max_cols
+            bg_h = items_per_col * h_line + 40
+            
+            y_start = h - bg_h - 35
+            if y_start < 0:
+                y_start = 0
+
+            click_boxes = draw_dashboard(image, labels, dyn_counts, sta_counts,
+                                         selected_class, mode, 5, y_start)
 
         # Bottom bar
         cv.rectangle(image, (0, h - 28), (w, h), (40, 40, 40), cv.FILLED)
-        cv.putText(image, "[SPACE]Gravar  [D]Dinamico  [E]Estatico  [T]Dashboard  [0-9,A-E]Classe  [Q]Sair",
-                   (10, h - 8), cv.FONT_HERSHEY_SIMPLEX, 0.32, (180, 180, 180), 1)
+        cv.putText(image, "[SPACE]Gravar  []]Dinamico  [[]Estatico  [/]Dashboard  [a-z/<>]Classe",
+                   (10, h - 8), cv.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1)
 
         cv.imshow("Coleta Dinamica — Okuyeva", image)
 

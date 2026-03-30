@@ -61,9 +61,12 @@ app.add_middleware(
 
 CONFIANCA_MINIMA = 0.45
 SEQUENCE_LENGTH = 30
-CLASSIFY_EVERY_N = 10     # Run LSTM every N new frames
+CLASSIFY_EVERY_N = 3      # Run LSTM more frequently for better responsiveness
 SMOOTHING_WINDOW = 5      # Vote over last N predictions
 GESTURE_HOLD_TIME = 1.5   # Keep gesture visible for at least this many seconds
+
+# MUDE AQUI O NÚMERO DA CÂMARA (0 = Webcam do PC, 1 ou 2 = Iriun Webcam/Externa)
+CAMERA_INDEX = 2
 
 # ── Shared State ──
 global_gesture = ""
@@ -84,22 +87,15 @@ cam_state = CameraState()
 def capture_thread():
     global global_gesture, global_confidence, global_gesture_type, video_initialized
 
-    # Probe cameras
-    cap = None
-    for i in range(3):
-        temp_cap = cv.VideoCapture(i, cv.CAP_DSHOW)
-        if temp_cap.isOpened():
-            ret, frame = temp_cap.read()
-            if ret:
-                if cap is not None:
-                    cap.release()
-                cap = temp_cap
-                print(f"[CAM] Using Camera Index: {i}")
-                if i == 1:
-                    break
+    print(f"[CAM] Inicializando Camara {CAMERA_INDEX}...")
+    cap = cv.VideoCapture(CAMERA_INDEX, cv.CAP_DSHOW)
+    
+    # Tenta inicializar sem DSHOW se falhar
+    if not cap.isOpened():
+        cap = cv.VideoCapture(CAMERA_INDEX)
 
-    if cap is None or not cap.isOpened():
-        print("[CAM] Camera Initialization Failed")
+    if not cap.isOpened():
+        print(f"[ERRO] Falha ao abrir a câmara {CAMERA_INDEX}. Edite a variavel CAMERA_INDEX no codigo.")
         return
 
     cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)

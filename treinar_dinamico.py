@@ -8,8 +8,9 @@ Optimizações para datasets pequenos:
   - Modelo menor (64 hidden, 2 layers) para evitar overfitting
   - Class weights para balancear classes desiguais
   - Feature normalization (mean/std guardados no checkpoint)
-  - Augmentação agressiva: ruído, time-warp, mirror, feature dropout
+  - Augmentação: ruído, time-warp, mirror, feature dropout
   - Gradient clipping para estabilidade
+  - Verificação de colapso do modelo
 
 Uso:
   python treinar_dinamico.py
@@ -19,6 +20,7 @@ import glob
 import numpy as np
 import torch
 import torch.nn as nn
+from collections import Counter
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 
@@ -34,8 +36,8 @@ NUM_FEATURES = 1662
 BATCH_SIZE = 16
 EPOCHS = 200
 LEARNING_RATE = 0.0005
-AUGMENT_FACTOR = 7       # More augmentation for small datasets
-AUGMENT_NOISE = 0.015
+AUGMENT_FACTOR = 5
+AUGMENT_NOISE = 0.012
 RANDOM_SEED = 42
 
 torch.manual_seed(RANDOM_SEED)
@@ -128,22 +130,40 @@ def speed_variation(sequence, factor_range=(0.7, 1.3)):
     return resampled
 
 
+def shift_sequence(sequence, max_shift=3):
+    """Simulate sliding window misalignment by shifting left or right."""
+    shift = np.random.randint(-max_shift, max_shift + 1)
+    if shift == 0:
+        return sequence.copy()
+    
+    res = np.empty_like(sequence)
+    if shift > 0:
+        res[shift:] = sequence[:-shift]
+        res[:shift] = sequence[0]
+    else:
+        shift = abs(shift)
+        res[:-shift] = sequence[shift:]
+        res[-shift:] = sequence[-1]
+    return res
+
+
 def augment_sequence(sequence, noise_std=AUGMENT_NOISE):
     """Apply random combination of augmentations."""
     aug = sequence.copy()
     
-    # Always add noise
+    if np.random.random() < 0.4:
+        aug = shift_sequence(aug)
+        
     aug = aug + np.random.normal(0, noise_std, aug.shape)
     
-    # Random augmentations
     r = np.random.random()
-    if r < 0.3:
-        aug = time_warp(aug.astype(np.float32))
-    elif r < 0.5:
-        aug = speed_variation(aug.astype(np.float32))
+    if r < 0.25:
+        aug = time_warp(aug.astype(np.float32), sigma=0.15)
+    elif r < 0.4:
+        aug = speed_variation(aug.astype(np.float32), factor_range=(0.8, 1.2))
     
-    if np.random.random() < 0.3:
-        aug = feature_dropout(aug.astype(np.float32))
+    if np.random.random() < 0.15:
+        aug = feature_dropout(aug.astype(np.float32), drop_rate=0.03)
     
     return aug.astype(np.float32)
 
@@ -221,13 +241,12 @@ def main():
         exit(1)
 
     # ── Feature Normalization ──
-    # Compute mean/std across all sequences and frames
-    X_flat = X.reshape(-1, NUM_FEATURES)  # (total_frames, features)
+    X_flat = X.reshape(-1, NUM_FEATURES)
     feat_mean = X_flat.mean(axis=0)
     feat_std = X_flat.std(axis=0)
-    feat_std[feat_std < 1e-8] = 1.0  # avoid division by zero
-    
-    # Normalize training data
+    feat_std[feat_std < 1e-8] = 1.0
+
+    X_raw = X.copy()
     X = (X - feat_mean[np.newaxis, np.newaxis, :]) / feat_std[np.newaxis, np.newaxis, :]
     print(f"\nFeature normalization: mean range [{feat_mean.min():.4f}, {feat_mean.max():.4f}]")
     print(f"                       std range  [{feat_std.min():.4f}, {feat_std.max():.4f}]")
@@ -235,25 +254,22 @@ def main():
     # ── Class Weights ──
     class_counts = np.bincount(y, minlength=NUM_CLASSES).astype(np.float32)
     class_weights = 1.0 / (class_counts + 1e-6)
-    class_weights = class_weights / class_weights.sum() * NUM_CLASSES  # normalize
+    class_weights = class_weights / class_weights.sum() * NUM_CLASSES
     class_weights_tensor = torch.FloatTensor(class_weights).to(device)
     print(f"\nClass weights: {dict(zip([class_id_to_label[i] for i in range(NUM_CLASSES)], [f'{w:.2f}' for w in class_weights]))}")
 
     # ── Data Augmentation ──
-    print(f"\nAugmentation: {AUGMENT_FACTOR}x (ruído + time-warp + mirror + dropout + speed)...")
+    print(f"\nAugmentation: {AUGMENT_FACTOR}x (ruído + time-warp + dropout + speed)...")
     X_aug = [X]
     y_aug = [y]
     
-    # Standard augmentations
     for _ in range(AUGMENT_FACTOR):
         augmented = np.array([augment_sequence(seq) for seq in X])
         X_aug.append(augmented)
         y_aug.append(y)
     
-    # Add mirrored versions (doubles effective dataset)
-    X_mirror = np.array([mirror_sequence(seq) for seq in X])
-    # Normalize mirrored data
-    X_mirror_raw = X_mirror * feat_std[np.newaxis, np.newaxis, :] + feat_mean[np.newaxis, np.newaxis, :]
+    # Mirror: applied on RAW data (before normalization) to keep x-coords in [0,1]
+    X_mirror_raw = np.array([mirror_sequence(seq) for seq in X_raw])
     X_mirror_norm = (X_mirror_raw - feat_mean[np.newaxis, np.newaxis, :]) / feat_std[np.newaxis, np.newaxis, :]
     X_aug.append(X_mirror_norm)
     y_aug.append(y)
@@ -333,6 +349,7 @@ def main():
         val_loss = 0.0
         val_correct = 0
         val_total = 0
+        val_preds = []
 
         with torch.no_grad():
             for batch_x, batch_y in test_loader:
@@ -344,15 +361,20 @@ def main():
                 _, predicted = torch.max(outputs, 1)
                 val_total += batch_y.size(0)
                 val_correct += (predicted == batch_y).sum().item()
+                val_preds.extend(predicted.cpu().tolist())
 
         val_acc = val_correct / val_total
         avg_val_loss = val_loss / len(test_loader)
 
         if epoch % 10 == 0 or epoch == 1:
+            pred_dist = Counter(val_preds)
+            dist_str = " ".join(f"{class_id_to_label.get(k, '?')[:3]}={v}" 
+                                for k, v in sorted(pred_dist.items()))
             print(f"  Epoch {epoch:3d}/{EPOCHS} | "
                   f"Train: {train_acc*100:.1f}% | "
                   f"Val: {val_acc*100:.1f}% | "
-                  f"Loss: {avg_val_loss:.4f}")
+                  f"Loss: {avg_val_loss:.4f} | "
+                  f"Pred: [{dist_str}]")
 
         # Early stopping
         if val_acc > best_acc:
@@ -388,6 +410,11 @@ def main():
 
     class_correct = {}
     class_total = {}
+    all_preds = []
+    all_actuals = []
+
+    # Confusion matrix storage: confusion[actual][predicted] = count
+    confusion = {i: {j: 0 for j in range(NUM_CLASSES)} for i in range(NUM_CLASSES)}
 
     with torch.no_grad():
         for batch_x, batch_y in test_loader:
@@ -397,10 +424,14 @@ def main():
             _, predicted = torch.max(outputs, 1)
 
             for pred, actual in zip(predicted, batch_y):
-                cls = int(actual.item())
-                class_total[cls] = class_total.get(cls, 0) + 1
-                if pred == actual:
-                    class_correct[cls] = class_correct.get(cls, 0) + 1
+                p = int(pred.item())
+                a = int(actual.item())
+                all_preds.append(p)
+                all_actuals.append(a)
+                confusion[a][p] = confusion[a].get(p, 0) + 1
+                class_total[a] = class_total.get(a, 0) + 1
+                if p == a:
+                    class_correct[a] = class_correct.get(a, 0) + 1
 
     print("\nRelatório por classe:")
     for cls_id in sorted(class_total.keys()):
@@ -410,17 +441,68 @@ def main():
         label = class_id_to_label.get(cls_id, f"Classe {cls_id}")
         print(f"  {cls_id:2d}: {label:20s} {acc*100:6.1f}%  ({correct}/{total})")
 
+    # ── Confusion Matrix ──
+    print(f"\n{'─' * 62}")
+    print("  MATRIZ DE CONFUSÃO (linhas=real, colunas=previsto)")
+    print(f"{'─' * 62}")
+    header = "         "
+    for j in range(NUM_CLASSES):
+        short = class_id_to_label.get(j, f"C{j}")[:6]
+        header += f"{short:>7s}"
+    print(header)
+    for i in range(NUM_CLASSES):
+        row_label = class_id_to_label.get(i, f"C{i}")[:8]
+        row = f"  {row_label:8s}"
+        for j in range(NUM_CLASSES):
+            val = confusion[i][j]
+            if i == j and val > 0:
+                row += f"  [{val:3d}]"
+            elif val > 0:
+                row += f"   {val:3d} "
+            else:
+                row += f"     . "
+        print(row)
+
+    # ── Collapse Detection ──
+    pred_counts = Counter(all_preds)
+    total_preds = len(all_preds)
+    dominant_class = pred_counts.most_common(1)[0] if pred_counts else (0, 0)
+    dominant_ratio = dominant_class[1] / total_preds if total_preds > 0 else 0
+
+    if dominant_ratio > 0.6:
+        dominant_label = class_id_to_label.get(dominant_class[0], f"Classe {dominant_class[0]}")
+        print(f"\n  ⚠️  ALERTA DE COLAPSO: O modelo prevê '{dominant_label}' em "
+              f"{dominant_ratio*100:.0f}% dos casos!")
+        print(f"  Distribuição de previsões: ", end="")
+        for cls_id, count in sorted(pred_counts.items()):
+            lbl = class_id_to_label.get(cls_id, f"C{cls_id}")
+            print(f"{lbl}={count} ", end="")
+        print()
+        print(f"\n  POSSÍVEIS SOLUÇÕES:")
+        print(f"    1. Recolher mais dados variados (posições, distâncias diferentes)")
+        print(f"    2. Garantir que gestos são bem distintos entre classes")
+        print(f"    3. Verificar se os dados foram recolhidos correctamente")
+    else:
+        print(f"\n  Distribuição de previsões: ", end="")
+        for cls_id, count in sorted(pred_counts.items()):
+            lbl = class_id_to_label.get(cls_id, f"C{cls_id}")
+            print(f"{lbl}={count} ", end="")
+        print()
+
     size_kb = os.path.getsize(MODEL_SAVE_PATH) / 1024
     print(f"\nModelo guardado: '{MODEL_SAVE_PATH}' ({size_kb:.1f} KB)")
     print(f"Device: {device}")
 
     print("\n" + "=" * 62)
-    if best_acc >= 0.90:
-        print("  ✅ MODELO PRONTO PARA DEMO!")
+    if dominant_ratio > 0.6:
+        print("  ❌ MODELO COM COLAPSO — sempre prevê a mesma classe!")
+        print("     Re-execute coleta_dinamica.py e recolha dados mais variados.")
+    elif best_acc >= 0.90:
+        print("  OK MODELO PRONTO PARA DEMO!")
     elif best_acc >= 0.75:
-        print("  ⚠️  BOM! Recolha mais dados para melhorar.")
+        print("  RAZOÁVEL. Recolha mais dados para melhorar.")
     else:
-        print("  ❌ PRECISA DE MAIS DADOS. Use coleta_dinamica.py")
+        print("  PRECISA DE MAIS DADOS. Use coleta_dinamica.py")
     print("=" * 62)
 
 
