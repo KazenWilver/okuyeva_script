@@ -31,13 +31,26 @@ SEQUENCE_DIR = 'model/sequence_classifier/sequences'
 LABEL_CSV = 'model/sequence_classifier/sequence_classifier_label.csv'
 MODEL_SAVE_PATH = 'model/sequence_classifier/sequence_classifier.pt'
 SEQUENCE_LENGTH = 30
-NUM_FEATURES = 1662
+
+# ── Feature Selection ──
+# Layout original (1662 features):
+#   Pose:       0:132   (33 landmarks × 4)  = 132
+#   Face:     132:1536  (468 landmarks × 3)  = 1404  ← REMOVIDO (causa drift)
+#   Left Hand: 1536:1599 (21 landmarks × 3)  = 63
+#   Right Hand:1599:1662 (21 landmarks × 3)  = 63
+#
+# A face é 84.5% do sinal mas NÃO distingue gestos!
+# Mudanças mínimas na posição da cara em tempo real destroem as previsões.
+# Solução: usar apenas Pose + Mãos = 258 features (mãos = 49% do sinal)
+FEATURE_INDICES = list(range(0, 132)) + list(range(1536, 1662))
+NUM_FEATURES = len(FEATURE_INDICES)  # 258
+NUM_FEATURES_RAW = 1662  # raw features from MediaPipe
 
 BATCH_SIZE = 16
 EPOCHS = 200
 LEARNING_RATE = 0.0005
 AUGMENT_FACTOR = 5
-AUGMENT_NOISE = 0.012
+AUGMENT_NOISE = 0.015  # slightly higher noise since fewer features
 RANDOM_SEED = 42
 
 torch.manual_seed(RANDOM_SEED)
@@ -78,11 +91,10 @@ def time_warp(sequence, sigma=0.2):
 def mirror_sequence(sequence):
     """Mirror left/right by flipping x-coords and swapping hands.
     
-    Feature layout (1662 total):
+    Feature layout after face removal (258 total):
       Pose:  0:132   (33 landmarks × 4: x,y,z,vis)  — x every 4 values
-      Face:  132:1536 (468 landmarks × 3: x,y,z)     — x every 3 values  
-      LH:    1536:1599 (21 landmarks × 3: x,y,z)     — x every 3 values
-      RH:    1599:1662 (21 landmarks × 3: x,y,z)     — x every 3 values
+      LH:    132:195  (21 landmarks × 3: x,y,z)      — x every 3 values
+      RH:    195:258  (21 landmarks × 3: x,y,z)      — x every 3 values
     """
     mirrored = sequence.copy()
     
@@ -90,19 +102,15 @@ def mirror_sequence(sequence):
     for i in range(0, 132, 4):
         mirrored[:, i] = 1.0 - mirrored[:, i]
     
-    # Flip x coordinates in face (every 3rd value starting at 132)
-    for i in range(132, 1536, 3):
+    # Flip x in hands (every 3rd value starting at 132)
+    for i in range(132, 258, 3):
         mirrored[:, i] = 1.0 - mirrored[:, i]
     
-    # Flip x in left hand and right hand
-    for i in range(1536, 1662, 3):
-        mirrored[:, i] = 1.0 - mirrored[:, i]
-    
-    # Swap left hand and right hand feature blocks
-    lh = mirrored[:, 1536:1599].copy()
-    rh = mirrored[:, 1599:1662].copy()
-    mirrored[:, 1536:1599] = rh
-    mirrored[:, 1599:1662] = lh
+    # Swap left hand (132:195) and right hand (195:258)
+    lh = mirrored[:, 132:195].copy()
+    rh = mirrored[:, 195:258].copy()
+    mirrored[:, 132:195] = rh
+    mirrored[:, 195:258] = lh
     
     return mirrored
 
@@ -201,11 +209,18 @@ def main():
 
         for npy_path in npy_files:
             seq = np.load(npy_path)
-            if seq.shape == (SEQUENCE_LENGTH, NUM_FEATURES):
+            # Accept raw 1662-feature sequences from disk
+            if seq.shape == (SEQUENCE_LENGTH, NUM_FEATURES_RAW):
+                # Select only pose + hands features (remove face)
+                seq = seq[:, FEATURE_INDICES]
+                all_sequences.append(seq)
+                all_labels.append(class_id)
+            elif seq.shape == (SEQUENCE_LENGTH, NUM_FEATURES):
+                # Already filtered (shouldn't happen, but handle gracefully)
                 all_sequences.append(seq)
                 all_labels.append(class_id)
             else:
-                print(f"  AVISO: {npy_path} shape {seq.shape} != ({SEQUENCE_LENGTH}, {NUM_FEATURES})")
+                print(f"  AVISO: {npy_path} shape {seq.shape} ignorado")
 
     if len(all_sequences) < 2:
         print(f"\nERRO: Apenas {len(all_sequences)} sequências encontradas.")
@@ -214,6 +229,9 @@ def main():
 
     X = np.array(all_sequences, dtype=np.float32)
     y = np.array(all_labels, dtype=np.int64)
+    
+    print(f"\n  Features: {NUM_FEATURES_RAW} (raw) → {NUM_FEATURES} (pose+mãos, sem face)")
+    print(f"  Face removida: 1404 features de ruído eliminadas!")
 
     unique_classes = sorted(np.unique(y))
     NUM_CLASSES = len(unique_classes)
@@ -392,6 +410,7 @@ def main():
                 'class_remap': class_remap,
                 'feat_mean': feat_mean.tolist(),
                 'feat_std': feat_std.tolist(),
+                'feature_indices': FEATURE_INDICES,
                 'best_accuracy': best_acc,
             }, MODEL_SAVE_PATH)
         else:

@@ -98,8 +98,9 @@ def capture_thread():
         print(f"[ERRO] Falha ao abrir a câmara {CAMERA_INDEX}. Edite a variavel CAMERA_INDEX no codigo.")
         return
 
-    cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
+    # Mesma resolução que a coleta para consistência de detecção
+    cap.set(cv.CAP_PROP_FRAME_WIDTH, 960)
+    cap.set(cv.CAP_PROP_FRAME_HEIGHT, 540)
     cap.set(cv.CAP_PROP_FPS, 30)
 
     # MediaPipe Holistic
@@ -143,11 +144,13 @@ def capture_thread():
         # ── LSTM Dynamic Classification ──
         now = time.time()
 
-        if LSTM_AVAILABLE and hands_visible:
+        if LSTM_AVAILABLE:
+            # Always accumulate keypoints (matches collection behavior)
             sequence_buffer.append(keypoints)
             frames_since_classify += 1
 
-            if len(sequence_buffer) >= SEQUENCE_LENGTH and frames_since_classify >= CLASSIFY_EVERY_N:
+            # Only classify when hands are visible and buffer is full
+            if hands_visible and len(sequence_buffer) >= SEQUENCE_LENGTH and frames_since_classify >= CLASSIFY_EVERY_N:
                 frames_since_classify = 0
                 seq_array = np.array(list(sequence_buffer), dtype=np.float32)
                 class_id, confidence = seq_classifier(seq_array)
@@ -161,14 +164,12 @@ def capture_thread():
 
                 # ── Majority Vote Smoothing ──
                 if prediction_history:
-                    # Count non-empty predictions
                     valid_preds = [(lbl, conf) for lbl, conf in prediction_history if lbl]
                     
-                    if len(valid_preds) >= 2:  # Require at least 2 agreeing predictions
+                    if len(valid_preds) >= 2:
                         label_counts = Counter(lbl for lbl, _ in valid_preds)
                         best_label, count = label_counts.most_common(1)[0]
                         
-                        # Require majority
                         if count >= len(prediction_history) / 2:
                             avg_conf = np.mean([conf for lbl, conf in valid_preds if lbl == best_label])
                             active_gesture = best_label
@@ -176,7 +177,6 @@ def capture_thread():
                             last_gesture_time = now
                         
                     elif not valid_preds:
-                        # No valid predictions — but respect hold time
                         if now - last_gesture_time > GESTURE_HOLD_TIME:
                             active_gesture = ""
                             active_confidence = 0.0
@@ -189,15 +189,12 @@ def capture_thread():
                           f"History: {len(prediction_history)}")
                     last_debug_time = now
 
-        elif not hands_visible:
-            sequence_buffer.clear()
-            frames_since_classify = 0
-            prediction_history.clear()
-            
-            # Respect hold time before clearing
-            if now - last_gesture_time > GESTURE_HOLD_TIME:
-                active_gesture = ""
-                active_confidence = 0.0
+            elif not hands_visible:
+                # Don't clear buffer! Just respect hold time for display
+                if now - last_gesture_time > GESTURE_HOLD_TIME:
+                    active_gesture = ""
+                    active_confidence = 0.0
+                    prediction_history.clear()
 
         # Update global state
         if active_gesture:

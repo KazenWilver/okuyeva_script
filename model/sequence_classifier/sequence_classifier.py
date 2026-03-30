@@ -77,6 +77,7 @@ class SequenceClassifier:
         self.class_id_to_label = {}
         self.feat_mean = None
         self.feat_std = None
+        self.feature_indices = None  # indices to select from raw 1662 features
 
         if labels_path and os.path.exists(labels_path):
             with open(labels_path, encoding='utf-8-sig') as f:
@@ -88,6 +89,11 @@ class SequenceClassifier:
             input_size = checkpoint.get('input_size', 1662)
             hidden_size = checkpoint.get('hidden_size', 64)
             num_layers = checkpoint.get('num_layers', 2)
+
+            # Load feature indices (for face removal)
+            if 'feature_indices' in checkpoint:
+                self.feature_indices = checkpoint['feature_indices']
+                print(f"[SEQ] Feature filter: {input_size} features (from 1662 raw)")
 
             # Load class mapping
             if 'class_id_to_label' in checkpoint:
@@ -116,7 +122,7 @@ class SequenceClassifier:
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.model.eval()
             print(f"[SEQ] Model: {model_path} on {self.device}")
-            print(f"[SEQ] Classes: {num_classes} | Arch: LSTM({hidden_size}x{num_layers})")
+            print(f"[SEQ] Classes: {num_classes} | Arch: LSTM({hidden_size}x{num_layers}) | Features: {input_size}")
             print(f"[SEQ] Labels: {self.class_id_to_label}")
             print(f"[SEQ] Normalization: {'Yes' if self.feat_mean is not None else 'No'}")
 
@@ -130,6 +136,7 @@ class SequenceClassifier:
 
         Args:
             sequence: numpy array of shape (seq_len, num_features)
+                      Can be raw 1662 features or already filtered.
 
         Returns:
             (class_id, confidence) tuple
@@ -138,6 +145,11 @@ class SequenceClassifier:
             return -1, 0.0
 
         x = torch.FloatTensor(sequence).unsqueeze(0).to(self.device)
+
+        # Filter features if model was trained with feature selection
+        if self.feature_indices is not None and x.shape[2] > len(self.feature_indices):
+            idx = torch.LongTensor(self.feature_indices).to(self.device)
+            x = torch.index_select(x, 2, idx)
 
         # Apply feature normalization if available
         if self.feat_mean is not None:
